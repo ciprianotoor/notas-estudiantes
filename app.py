@@ -801,12 +801,17 @@ def groups():
         grade = request.form.get("grade", "").strip()
         section = request.form.get("section", "").strip().upper()
         academic_year = request.form.get("academic_year", type=int)
+        guide_id = request.form.get("guide_id", type=int)
         if not name:
             flash("Escribe un nombre para el grupo.", "error")
         else:
             try:
                 with db() as connection:
-                    connection.execute("INSERT INTO groups(name,grade,section,academic_year,teacher_id) VALUES(?,?,?,?,?)", (name, grade, section, academic_year, None))
+                    guide = connection.execute("SELECT id FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.id=? AND t.is_admin=0 AND r.role='guide'", (guide_id,)).fetchone() if guide_id else None
+                    if guide_id and not guide:
+                        flash("El docente guía seleccionado no es válido.", "error")
+                        return redirect(url_for("groups"))
+                    connection.execute("INSERT INTO groups(name,grade,section,academic_year,teacher_id) VALUES(?,?,?,?,?)", (name, grade, section, academic_year, guide_id))
                 flash("Grupo creado correctamente.", "success")
             except sqlite3.IntegrityError:
                 flash("Ese grupo ya existe.", "error")
@@ -834,7 +839,11 @@ def groups():
             JOIN teacher_roles tr ON tr.teacher_id=t.id AND tr.role='teacher'
             ORDER BY t.name
         """).fetchall()
-    return render_template("groups.html", groups=group_data, subjects=subjects, teachers=teachers, workflow_level=setup_level(), can_manage=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), read_only=teacher_is_admin(teacher_id))
+        guides = connection.execute("""
+            SELECT t.id,t.name FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id
+            WHERE t.is_admin=0 AND r.role='guide' ORDER BY t.name
+        """).fetchall()
+    return render_template("groups.html", groups=group_data, subjects=subjects, teachers=teachers, guides=guides, workflow_level=setup_level(), can_manage=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), read_only=teacher_is_admin(teacher_id))
 
 
 @app.post("/groups/<int:group_id>/delete")
