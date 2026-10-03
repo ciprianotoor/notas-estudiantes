@@ -743,16 +743,19 @@ def index():
 def groups():
     teacher_id = session.get("teacher_id")
     if request.method == "POST":
-        if not is_guide_teacher(teacher_id):
-            flash("El Director@ solo puede consultar esta información. El docente guía administra las listas.", "error")
+        if not is_guide_teacher(teacher_id) and not teacher_is_admin(teacher_id):
+            flash("Solo el director o el docente guía pueden gestionar esta información.", "error")
             return redirect(url_for("groups"))
         if request.form.get("action") == "update_context":
+            if not teacher_is_admin(teacher_id):
+                flash("Solo el director puede organizar los grupos.", "error")
+                return redirect(url_for("groups"))
             group_id = request.form.get("group_id", type=int)
             grade = request.form.get("grade", "").strip()
             section = request.form.get("section", "").strip().upper()
             academic_year = request.form.get("academic_year", type=int)
             with db() as connection:
-                connection.execute("UPDATE groups SET grade=?,section=?,academic_year=? WHERE id=? AND teacher_id=?", (grade, section, academic_year, group_id, teacher_id))
+                connection.execute("UPDATE groups SET grade=?,section=?,academic_year=? WHERE id=?", (grade, section, academic_year, group_id))
             flash("Datos académicos del grupo actualizados.", "success")
             return redirect(url_for("groups"))
         if request.form.get("action") == "add_student":
@@ -791,8 +794,8 @@ def groups():
             flash("La creación de grupos solo está disponible en la etapa de grupos y materias.", "error")
             return redirect(url_for("groups"))
         # Sólo el docente guía puede crear grupos
-        if get_teacher_role(teacher_id) != "guide":
-            flash("Solo el docente guía puede crear grupos.", "error")
+        if not teacher_is_admin(teacher_id):
+            flash("Solo el director puede crear grupos y organizar docentes.", "error")
             return redirect(url_for("groups"))
         name = request.form.get("name", "").strip()
         grade = request.form.get("grade", "").strip()
@@ -803,7 +806,7 @@ def groups():
         else:
             try:
                 with db() as connection:
-                    connection.execute("INSERT INTO groups(name,grade,section,academic_year,teacher_id) VALUES(?,?,?,?,?)", (name, grade, section, academic_year, teacher_id))
+                    connection.execute("INSERT INTO groups(name,grade,section,academic_year,teacher_id) VALUES(?,?,?,?,?)", (name, grade, section, academic_year, None))
                 flash("Grupo creado correctamente.", "success")
             except sqlite3.IntegrityError:
                 flash("Ese grupo ya existe.", "error")
@@ -831,11 +834,11 @@ def groups():
             JOIN teacher_roles tr ON tr.teacher_id=t.id AND tr.role='teacher'
             ORDER BY t.name
         """).fetchall()
-    return render_template("groups.html", groups=group_data, subjects=subjects, teachers=teachers, workflow_level=setup_level(), can_manage=is_guide_teacher(teacher_id), read_only=teacher_is_admin(teacher_id))
+    return render_template("groups.html", groups=group_data, subjects=subjects, teachers=teachers, workflow_level=setup_level(), can_manage=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), read_only=teacher_is_admin(teacher_id))
 
 
 @app.post("/groups/<int:group_id>/delete")
-@guide_required
+@admin_required
 def delete_group(group_id):
     with db() as connection:
         teacher_id = session.get("teacher_id")
@@ -874,7 +877,7 @@ def subjects_view():
 
 
 @app.route("/classes", methods=["GET", "POST"])
-@guide_required
+@admin_required
 @workflow_required(2)
 def classes_view():
     teacher_id = session.get("teacher_id")
@@ -900,7 +903,7 @@ def classes_view():
                 if not valid:
                     flash("El docente seleccionado no existe.", "error")
                     return redirect(url_for("classes_view"))
-                valid_group = connection.execute("SELECT 1 FROM groups WHERE id=? AND teacher_id=?", (group_id, teacher_id)).fetchone()
+                valid_group = connection.execute("SELECT 1 FROM groups WHERE id=?", (group_id,)).fetchone()
                 if not valid_group:
                     flash("El grupo seleccionado no existe.", "error")
                     return redirect(url_for("classes_view"))
@@ -930,12 +933,12 @@ def classes_view():
             JOIN teacher_roles tr ON tr.teacher_id=t.id AND tr.role='teacher'
             ORDER BY t.name
         """).fetchall()
-        groups_for_class = connection.execute("SELECT id,name FROM groups WHERE teacher_id=? ORDER BY name", (teacher_id,)).fetchall()
+        groups_for_class = connection.execute("SELECT id,name FROM groups ORDER BY name").fetchall()
     return render_template("classes.html", classes=classes, subjects=subjects, teachers=teachers, groups=groups_for_class)
 
 
 @app.post("/classes/<int:class_id>/delete")
-@guide_required
+@admin_required
 def delete_class(class_id):
     teacher_id = session.get("teacher_id")
     if not teacher_can_access_class(class_id, teacher_id):
@@ -1355,10 +1358,8 @@ def teachers_view():
             flash("Nombre y contraseña son obligatorios.", "error")
         elif role == "guide" and (not guide_grade or not guide_section or not guide_year):
             flash("Para el docente guía indica grado, sección y año de referencia.", "error")
-        elif role == "teacher" and not group_ids:
-            flash("Selecciona al menos un grupo creado por el docente guía.", "error")
-        elif role == "teacher" and not new_subject_name and not subject_ids:
-            flash("El docente de materia debe tener al menos una materia asignada.", "error")
+        elif role == "teacher" and not name:
+            flash("El nombre del docente es obligatorio.", "error")
         else:
             with db() as connection:
                 try:
@@ -1367,9 +1368,6 @@ def teachers_view():
                         group = connection.execute("SELECT id,name,grade,section,academic_year FROM groups WHERE id=?", (group_id,)).fetchone()
                         if group:
                             selected_groups.append(group)
-                    if role == "teacher" and not selected_groups:
-                        flash("Los grupos seleccionados ya no existen.", "error")
-                        return redirect(url_for("teachers_view"))
                     first_group = selected_groups[0] if selected_groups else None
                     inherited_grades = []
                     inherited_sections = []
