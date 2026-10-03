@@ -1,0 +1,79 @@
+ vuelvo a preguntar.. como exporto de docker a docker este proyecto?
+
+
+• La forma correcta es copiar:
+
+  1. La carpeta del proyecto.
+  2. El volumen Docker, que contiene la base de datos y el logo.
+
+  ## En la PC actual
+
+  Detén el proyecto:
+
+  cd /home/cipriano/docker/notas-estudiantes
+  docker compose stop
+
+  Identifica el volumen:
+
+  docker volume ls | grep notas
+
+  Probablemente se llama:
+
+  notas-estudiantes_datos-notas
+
+  Crea un respaldo dentro de la carpeta:
+
+  docker run --rm \
+    -v notas-estudiantes_datos-notas:/data \
+    -v "$PWD":/backup \
+    alpine tar czf /backup/datos-notas.tar.gz -C /data .
+
+  Ahora copia a la nueva PC:
+
+  /home/cipriano/docker/notas-estudiantes
+
+  incluyendo:
+
+  datos-notas.tar.gz
+
+  ## En Windows + WSL2 + Kali
+
+  Coloca la carpeta dentro de Kali, por ejemplo:
+
+  /home/tuusuario/docker/notas-estudiantes
+
+  En Docker Desktop activa:
+
+  Settings → Resources → WSL Integration → Kali
+
+  Luego, desde Kali:
+
+  cd ~/docker/notas-estudiantes
+
+  Crea el volumen:
+
+  docker volume create notas-estudiantes_datos-notas
+
+  Restaura la base de datos y el logo:
+
+  docker run --rm \
+    -v notas-estudiantes_datos-notas:/data \
+    -v "$PWD":/backup \
+    alpine sh -c 'tar xzf /backup/datos-notas.tar.gz -C /data'
+
+  Finalmente inicia:
+
+  docker compose up -d --build
+
+  Abre:
+
+  http://localhost:5000/login
+
+  No uses:
+
+  docker compose down -v
+
+  porque podría eliminar el volumen y la información.
+
+  Docker recomienda usar Docker Compose para reconstruir los contenedores y respaldar aparte los volúmenes donde viven los datos. Documentación oficial de Docker
+  (https://docs.docker.com/desktop/settings-and-maintenance/backup-and-restore/)

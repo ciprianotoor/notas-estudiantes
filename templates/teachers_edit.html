@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Editar docente{% endblock %}
+{% block content %}
+<h1>Editar docente</h1>
+<div class="card">
+  <form method="post" class="grid">
+    <label>Nombre<input name="name" value="{{ teacher.name }}" required></label>
+    <label>Email<input name="email" value="{{ teacher.email }}"></label>
+    <label>Tipo de docente<select name="role" {% if teacher.is_admin %}disabled{% endif %}><option value="teacher" {% if teacher.role == 'teacher' %}selected{% endif %}>Docente de materia</option><option value="guide" {% if teacher.role == 'guide' %}selected{% endif %}>Docente guía</option></select>{% if teacher.is_admin %}<small class="muted">La cuenta admin siempre conserva el máximo nivel.</small>{% endif %}</label>
+    <label>Grado / curso<input name="teacher_grade" value="{{ teacher.grade or '' }}" required></label>
+    <label>Sección<input name="teacher_section" value="{{ teacher.section or '' }}" required></label>
+    <label>Año académico<input name="teacher_year" type="number" value="{{ teacher.academic_year or '' }}" min="2000" max="2100" required></label>
+    <label>Nueva contraseña / restablecer clave<input name="password" type="password"><small class="muted">Déjalo vacío para conservarla.</small></label>
+    <label>&nbsp;<button>Guardar</button></label>
+  </form>
+</div>
+{% endblock %}

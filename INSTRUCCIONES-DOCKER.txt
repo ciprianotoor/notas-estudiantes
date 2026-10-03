@@ -1,0 +1,153 @@
+INSTALACION DE NOTAS-ESTUDIANTES CON DOCKER
+============================================
+
+Estas instrucciones sirven para instalar el sistema en Proxmox, Ubuntu,
+Debian u otro servidor Linux con Docker.
+
+1. REQUISITOS
+-------------
+
+Instala Docker y Docker Compose:
+
+    sudo apt update
+    sudo apt install -y docker.io docker-compose-plugin unzip
+    sudo systemctl enable --now docker
+
+Comprueba la instalación:
+
+    docker --version
+    docker compose version
+
+
+2. COPIAR EL PROYECTO AL SERVIDOR
+---------------------------------
+
+Descarga desde Dropbox el archivo:
+
+    Notas-Estudiantes-Proxmox-20260811.zip
+
+Puedes copiarlo al servidor con SCP:
+
+    scp Notas-Estudiantes-Proxmox-20260811.zip usuario@IP_DEL_SERVIDOR:/opt/
+
+Entra al servidor y descomprime:
+
+    cd /opt
+    sudo unzip Notas-Estudiantes-Proxmox-20260811.zip
+    cd notas-estudiantes
+
+
+3. CAMBIAR LA CLAVE DE SEGURIDAD
+---------------------------------
+
+Edita el archivo compose.yaml:
+
+    nano compose.yaml
+
+Busca esta línea:
+
+    SECRET_KEY: cambia-esta-clave-en-proxmox
+
+Y reemplázala por una clave larga y privada. No compartas esa clave.
+
+
+4. INICIAR LA APLICACION
+------------------------
+
+Desde la carpeta notas-estudiantes ejecuta:
+
+    sudo docker compose up -d --build
+
+Comprueba que el contenedor esté funcionando:
+
+    sudo docker compose ps
+    sudo docker compose logs -f notas
+
+Pulsa CTRL+C para salir de los registros. El contenedor seguirá funcionando.
+
+
+5. ABRIR EL SISTEMA
+-------------------
+
+Desde otro equipo abre en el navegador:
+
+    http://IP_DEL_SERVIDOR:5000/login
+
+Reemplaza IP_DEL_SERVIDOR por la dirección IP de Proxmox o del servidor.
+
+La cuenta de administrador inicial es:
+
+    Usuario: admin
+    Clave: admin123
+
+Cambia la clave o crea una cuenta segura después de entrar.
+
+
+6. DATOS Y ARCHIVOS IMPORTANTES
+-------------------------------
+
+La carpeta data contiene:
+
+    data/notas.db       Base de datos SQLite.
+    data/uploads/       Logos y archivos cargados.
+
+No borres la carpeta data. El compose.yaml la monta para que los datos no se
+pierdan cuando se reconstruya o reinicie el contenedor.
+
+
+7. ACTUALIZAR EL SISTEMA
+------------------------
+
+Antes de actualizar, haz una copia de seguridad:
+
+    cp data/notas.db data/notas-respaldo-$(date +%F).db
+
+Reemplaza los archivos del proyecto sin borrar data/ y ejecuta:
+
+    sudo docker compose up -d --build
+
+
+8. HACER UNA COPIA DE SEGURIDAD
+------------------------------
+
+Desde la carpeta del proyecto:
+
+    mkdir -p respaldos
+    cp data/notas.db respaldos/notas-$(date +%F-%H%M).db
+
+Guarda también la carpeta data/uploads si contiene logos importantes.
+
+
+9. DETENER O REINICIAR
+----------------------
+
+Detener:
+
+    sudo docker compose down
+
+Reiniciar:
+
+    sudo docker compose restart
+
+Ver registros:
+
+    sudo docker compose logs -f notas
+
+
+10. PROBLEMAS COMUNES
+---------------------
+
+No abre el navegador:
+    Comprueba la IP, el puerto 5000 y el firewall del servidor.
+
+El puerto 5000 está ocupado:
+    Cambia en compose.yaml "5000:5000" por otro puerto, por ejemplo
+    "5050:5000", y abre http://IP_DEL_SERVIDOR:5050/login.
+
+Se perdieron los datos:
+    Detén el contenedor y verifica que data/notas.db exista. No ejecutes
+    comandos que borren data/ sin tener un respaldo.
+
+El contenedor no inicia:
+    Ejecuta "sudo docker compose logs notas" para revisar el error.
+

@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Clases{% endblock %}
+{% block content %}
+<h1>Clases</h1>
+<div class="card">
+  <h2>Crear clase</h2>
+  <form method="post" class="grid">
+    <label>Nombre<input name="name" required></label>
+    <label>Materia<select name="subject_id" required>{% for subj in subjects %}<option value="{{ subj.id }}">{{ subj.name }}{% if subj.grade %} — {{ subj.grade }}{% endif %}{% if subj.year %} ({{ subj.year }}){% endif %}</option>{% endfor %}</select></label>
+    <label>Grupo / grado<select name="group_id" required>{% for group in groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></label>
+    <label>Docente de la materia<select name="teacher_id" required>{% for teacher in teachers %}<option value="{{ teacher.id }}">{{ teacher.name }}</option>{% endfor %}</select></label>
+    <label>Grado<input name="grade"></label>
+    <label>Sección<input name="section" placeholder="Ej. A" maxlength="10"></label>
+    <label>Año<input name="year" type="number" min="2000" max="2100"></label>
+    <label>&nbsp;<button class="warning">Crear clase</button></label>
+  </form>
+</div>
+<div class="card">
+  <h2>Clases registradas</h2>
+  {% if classes %}
+  <table>
+    <thead><tr><th>Nombre</th><th>Grupo</th><th>Materia</th><th>Grado</th><th>Sección</th><th>Año</th><th>Docente</th><th>Acciones</th></tr></thead>
+    <tbody>
+      {% for cls in classes %}
+      <tr>
+        <td>{{ cls.name }}</td>
+        <td>{{ cls.group_name or 'Sin grupo' }}</td>
+        <td>{{ cls.subject_name or 'Sin materia' }}</td>
+        <td>{{ cls.grade or 'N/A' }}</td>
+        <td>{{ cls.section or 'N/A' }}</td>
+        <td>{{ cls.year or 'N/A' }}</td>
+        <td>{{ cls.teacher_name or 'N/A' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('delete_class',class_id=cls.id) }}" onsubmit="return confirm('Eliminar esta clase?')"><button class="danger">Eliminar</button></form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No hay clases registradas.</p>
+  {% endif %}
+</div>
+{% endblock %}

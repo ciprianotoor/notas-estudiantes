@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}Configuración{% endblock %}
+{% block content %}
+<h1>Configuración institucional</h1>
+<p class="muted">El nombre, logo y tema se aplican a todo el sistema. Solo el Director@ puede modificar esta configuración.</p>
+<div class="card">
+  <form method="post" enctype="multipart/form-data" class="grid settings-form">
+    <label>Nombre del colegio<input name="school_name" value="{{ current.school_name }}" required></label>
+    <label>Nombre del administrador<input name="teacher_name" value="{{ current.teacher_name }}" required></label>
+    <label>Nombre del grupo predeterminado<input name="group_name" value="{{ current.group_name }}" required></label>
+    <label>Nueva contraseña<input name="password" type="password" placeholder="Dejar vacío para conservarla"></label>
+    <label>Tema para todos<select name="theme"><option value="light" {% if current.theme != 'dark' %}selected{% endif %}>Claro</option><option value="dark" {% if current.theme == 'dark' %}selected{% endif %}>Oscuro</option></select></label>
+    <label style="grid-column:1/-1">Criterios evaluativos<textarea name="evaluation_criteria" placeholder="Ejemplo: puntualidad, presentación, procedimiento, participación...">{{ current.evaluation_criteria }}</textarea></label>
+    <label>Logo del colegio (PNG o JPG)<input name="logo" type="file" accept="image/png,image/jpeg"></label>
+    <label>&nbsp;<button class="warning">Guardar configuración</button></label>
+  </form>
+  {% if current.logo_filename %}
+  <p><img src="{{ url_for('school_logo') }}" alt="Logo actual" style="max-height:100px;max-width:220px"></p>
+  {% endif %}
+  {% if current.teacher_name == 'Docente' %}
+  <p class="muted">La contraseña inicial es <strong>docente123</strong>. Cámbiala antes de compartir el sistema.</p>
+  {% endif %}
+</div>
+<div class="card">
+  <h2>Respaldo e intercambio de datos</h2>
+  <p class="muted">El archivo Excel funciona con Microsoft Excel y LibreOffice Calc. Incluye estudiantes, grupos, notas, fechas, estados y configuración.</p>
+  <div class="actions">
+    <a class="button" href="{{ url_for('export_xlsx') }}">Exportar a Excel</a>
+    <a class="button secondary" href="{{ url_for('backup_database') }}">Respaldar base de datos</a>
+    <form method="post" action="{{ url_for('import_xlsx') }}" enctype="multipart/form-data" style="display:inline-block">
+      <input type="file" name="workbook" accept=".xlsx,.xlsm"> <button>Importar</button>
+    </form>
+  </div>
+</div>
+<div class="card">
+  <h2>Docentes</h2>
+  <p class="muted">Administrar cuentas de docentes.</p>
+  <a class="button" href="{{ url_for('teachers_view') }}">Gestionar docentes</a>
+</div>
+{% endblock %}

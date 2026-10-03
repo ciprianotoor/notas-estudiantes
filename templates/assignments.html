@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}Asignaciones{% endblock %}
+{% block content %}
+<h1>Asignaciones de materias</h1>
+<div class="card">
+  <h2>Asignar materia a docente</h2>
+  <form method="post" class="grid">
+    <label>Docente<select name="teacher_id" required>{% for teacher in teachers %}<option value="{{ teacher.id }}">{{ teacher.name }}</option>{% endfor %}</select></label>
+    <label>Materia<select name="subject_id" required>{% for subj in subjects %}<option value="{{ subj.id }}">{{ subj.name }}{% if subj.grade %} — {{ subj.grade }}{% endif %}{% if subj.year %} ({{ subj.year }}){% endif %}</option>{% endfor %}</select></label>
+    <label>&nbsp;<button>Asignar</button></label>
+  </form>
+</div>
+<div class="card">
+  <h2>Asignaciones existentes</h2>
+  {% if assignments %}
+  <table>
+    <thead><tr><th>Docente</th><th>Materia</th><th>Acciones</th></tr></thead>
+    <tbody>
+      {% for a in assignments %}
+      <tr>
+        <td>{{ a.teacher_name }}</td>
+        <td>{{ a.subject_name }}</td>
+        <td>
+          <form method="post" action="{{ url_for('delete_assignment', teacher_id=a.teacher_id, subject_id=a.subject_id) }}" onsubmit="return confirm('Eliminar asignación?')"><button class="danger">Eliminar</button></form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No hay asignaciones registradas.</p>
+  {% endif %}
+</div>
+{% endblock %}

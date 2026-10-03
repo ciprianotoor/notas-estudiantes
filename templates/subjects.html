@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Materias{% endblock %}
+{% block content %}
+<h1>Materias</h1>
+<p class="muted">Administrar el catálogo de materias que usarán los docentes para registrar calificaciones por asignatura.</p>
+<div class="card">
+  <h2>Agregar materia</h2>
+  <form method="post" class="grid">
+    <label>Nombre de la materia<input name="name" required></label>
+    <label>Grado / curso<input name="grade" placeholder="Ejemplo: 7° A"></label>
+    <label>Año<input name="year" type="number" min="2000" max="2100"></label>
+    <label>&nbsp;<button class="warning">Crear materia</button></label>
+  </form>
+</div>
+<div class="card">
+  <h2>Materias registradas</h2>
+  {% if subjects %}
+  <table>
+    <thead><tr><th>Nombre</th><th>Grado</th><th>Año</th><th>Creada por</th></tr></thead>
+    <tbody>
+    {% for subj in subjects %}
+      <tr>
+        <td>{{ subj.name }}</td>
+        <td>{{ subj.grade }}</td>
+        <td>{{ subj.year or 'N/A' }}</td>
+        <td>{{ subj.created_by_name or 'Sistema' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No hay materias registradas. Crea la primera materia para comenzar a usar el registro por asignatura.</p>
+  {% endif %}
+</div>
+{% endblock %}

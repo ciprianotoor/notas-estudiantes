@@ -1,0 +1,9 @@
+data/*.db
+data/backups/
+data/uploads/*
+!data/uploads/.gitkeep
+.env
+.venv/
+__pycache__/
+*.pyc
+*.log

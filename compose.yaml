@@ -1,0 +1,13 @@
+services:
+  notas:
+    build: .
+    container_name: notas-estudiantes
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/data
+    environment:
+      DB_PATH: /data/notas.db
+      UPLOAD_DIR: /data/uploads
+      SECRET_KEY: ${SECRET_KEY:?Define SECRET_KEY en el archivo .env}
+    restart: unless-stopped
