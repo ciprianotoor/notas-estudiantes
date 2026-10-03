@@ -8,11 +8,11 @@ Requisitos
 
 Instalación y ejecución local
 ```bash
-cd /home/cipriano/docker/notas-estudiantes
+cd /ruta/al/proyecto/notas-estudiantes
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 # Inicializar DB y ejecutar (usa ./data/notas.db por defecto)
-DB_PATH=./data/notas.db SECRET_KEY=devsecret .venv/bin/python3 app.py
+DB_PATH=./data/notas.db SECRET_KEY=clave-local-de-desarrollo .venv/bin/python3 app.py
 ```
 
 Migración desde la versión de un único docente
@@ -24,7 +24,7 @@ DB_PATH=./data/notas.db .venv/bin/python3 migrate_to_multi_teachers.py
 
 Flujo básico
 - Accede a `http://127.0.0.1:5000`
-- Login docente inicial: contraseña `docente123` (usuario por defecto `Docente`).
+- En una instalación nueva, utiliza la cuenta administrativa creada por el instalador y cambia la contraseña inmediatamente.
 - En `Configuración -> Gestionar docentes` crea nuevos docentes.
 - Cada docente tiene sus propios grupos y estudiantes (filtrado por `teacher_id`).
 

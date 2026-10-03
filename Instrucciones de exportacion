@@ -10,7 +10,7 @@
 
   Detén el proyecto:
 
-  cd /home/cipriano/docker/notas-estudiantes
+  cd /ruta/al/proyecto/notas-estudiantes
   docker compose stop
 
   Identifica el volumen:
@@ -30,7 +30,7 @@
 
   Ahora copia a la nueva PC:
 
-  /home/cipriano/docker/notas-estudiantes
+  /ruta/al/proyecto/notas-estudiantes
 
   incluyendo:
 
@@ -40,7 +40,7 @@
 
   Coloca la carpeta dentro de Kali, por ejemplo:
 
-  /home/tuusuario/docker/notas-estudiantes
+  /ruta/al/proyecto/notas-estudiantes
 
   En Docker Desktop activa:
 

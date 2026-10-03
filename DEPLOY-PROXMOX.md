@@ -1,15 +1,15 @@
-# Despliegue en Proxmox
+# Despliegue en un servidor Linux
 
-1. Descarga y descomprime el ZIP en el servidor.
+1. Descarga o clona el proyecto en el servidor.
 2. Entra a la carpeta del proyecto.
-3. Cambia `SECRET_KEY` en `compose.yaml` por una clave privada.
+3. Copia `.env.example` a `.env` y define una clave privada en `SECRET_KEY`.
 4. Ejecuta:
 
 ```bash
 docker compose up -d --build
 ```
 
-La aplicación quedará disponible en `http://IP_DEL_SERVIDOR:5000`.
+La aplicación quedará disponible en `http://DIRECCION_DEL_SERVIDOR:5000`.
 
 Los datos se conservan en `./data`, donde están la base SQLite y las imágenes cargadas. Para respaldarlos:
 

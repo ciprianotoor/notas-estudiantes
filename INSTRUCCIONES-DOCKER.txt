@@ -1,8 +1,8 @@
 INSTALACION DE NOTAS-ESTUDIANTES CON DOCKER
 ============================================
 
-Estas instrucciones sirven para instalar el sistema en Proxmox, Ubuntu,
-Debian u otro servidor Linux con Docker.
+Estas instrucciones sirven para instalar el sistema en cualquier servidor
+Linux con Docker, incluyendo máquinas virtuales y servidores domésticos.
 
 1. REQUISITOS
 -------------
@@ -22,18 +22,18 @@ Comprueba la instalación:
 2. COPIAR EL PROYECTO AL SERVIDOR
 ---------------------------------
 
-Descarga desde Dropbox el archivo:
+Descarga el proyecto desde el repositorio o copia el archivo del proyecto:
 
-    Notas-Estudiantes-Proxmox-20260811.zip
+    archivo-del-proyecto.zip
 
 Puedes copiarlo al servidor con SCP:
 
-    scp Notas-Estudiantes-Proxmox-20260811.zip usuario@IP_DEL_SERVIDOR:/opt/
+    scp archivo-del-proyecto.zip usuario@DIRECCION_DEL_SERVIDOR:/ruta/de/instalacion/
 
 Entra al servidor y descomprime:
 
     cd /opt
-    sudo unzip Notas-Estudiantes-Proxmox-20260811.zip
+    sudo unzip archivo-del-proyecto.zip
     cd notas-estudiantes
 
 
@@ -42,11 +42,11 @@ Entra al servidor y descomprime:
 
 Edita el archivo compose.yaml:
 
-    nano compose.yaml
+    cp .env.example .env
 
 Busca esta línea:
 
-    SECRET_KEY: cambia-esta-clave-en-proxmox
+    SECRET_KEY=una-clave-larga-y-privada
 
 Y reemplázala por una clave larga y privada. No compartas esa clave.
 
@@ -73,14 +73,10 @@ Desde otro equipo abre en el navegador:
 
     http://IP_DEL_SERVIDOR:5000/login
 
-Reemplaza IP_DEL_SERVIDOR por la dirección IP de Proxmox o del servidor.
+Reemplaza DIRECCION_DEL_SERVIDOR por el nombre o dirección del servidor.
 
-La cuenta de administrador inicial es:
-
-    Usuario: admin
-    Clave: admin123
-
-Cambia la clave o crea una cuenta segura después de entrar.
+Usa la cuenta administrativa configurada para la instalación y cambia la
+contraseña inmediatamente después del primer acceso.
 
 
 6. DATOS Y ARCHIVOS IMPORTANTES
@@ -150,4 +146,3 @@ Se perdieron los datos:
 
 El contenedor no inicia:
     Ejecuta "sudo docker compose logs notas" para revisar el error.
-
