@@ -1988,7 +1988,9 @@ def subject_catalog():
         subject_id = request.form.get('subject_id')
         try:
             with db() as connection:
-                if action == 'create':
+                if action == 'replace':
+                    connection.execute('UPDATE subject_catalog SET code=?,name=?,area=?,description=?,updated_at=CURRENT_TIMESTAMP WHERE id=?', (request.form['code'].strip(), request.form['name'].strip(), request.form.get('area','').strip(), request.form.get('description','').strip(), request.form['subject_id']))
+                elif action == 'create':
                     connection.execute('INSERT INTO subject_catalog(code,name,area,description) VALUES(?,?,?,?)', (request.form['code'].strip(), request.form['name'].strip(), request.form.get('area','').strip(), request.form.get('description','').strip()))
                 elif action == 'update':
                     connection.execute('UPDATE subject_catalog SET code=?,name=?,area=?,description=?,updated_at=CURRENT_TIMESTAMP WHERE id=?', (request.form['code'].strip(), request.form['name'].strip(), request.form.get('area','').strip(), request.form.get('description','').strip(), subject_id))
@@ -2000,12 +2002,19 @@ def subject_catalog():
                         raise ValueError('La asignatura tiene referencias académicas; desactívala en lugar de eliminarla.')
                     connection.execute('DELETE FROM subject_catalog WHERE id=?', (subject_id,))
             flash('Catálogo actualizado.', 'success')
+        except sqlite3.IntegrityError:
+            with db() as connection:
+                duplicate = connection.execute('SELECT * FROM subject_catalog WHERE code=? COLLATE NOCASE OR name=? COLLATE NOCASE LIMIT 1', (request.form.get('code','').strip(), request.form.get('name','').strip())).fetchone()
+            return render_template('subject_catalog_v2.html', subjects=_catalog_rows(), duplicate=duplicate, attempted=dict(request.form)), 409
         except (sqlite3.IntegrityError, ValueError) as error:
             flash(f'No se pudo guardar: {error}', 'error')
         return redirect(url_for('subject_catalog'))
+    return render_template('subject_catalog_v2.html', subjects=_catalog_rows())
+
+
+def _catalog_rows():
     with db() as connection:
-        subjects = connection.execute('SELECT * FROM subject_catalog ORDER BY active DESC, id').fetchall()
-    return render_template('subject_catalog.html', subjects=subjects)
+        return connection.execute('SELECT * FROM subject_catalog ORDER BY active DESC, id').fetchall()
 
 
 def make_pdf(student_ids, selected_partials):
