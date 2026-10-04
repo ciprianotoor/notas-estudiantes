@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Control académico">
+  <rect width="64" height="64" rx="14" fill="#1769e0"/>
+  <path d="M10 25 32 14l22 11-22 11z" fill="#fff"/>
+  <path d="M18 31v10c8 7 20 7 28 0V31l-14 7z" fill="#dbeafe"/>
+  <path d="M52 28v13" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="52" cy="44" r="3" fill="#fbbf24"/>
+</svg>
