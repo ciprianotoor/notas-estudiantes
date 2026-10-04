@@ -1449,7 +1449,7 @@ def teachers_view():
                             inherited_sections.append(group["section"])
                     teacher_grade = guide_grade if role == "guide" else ", ".join(dict.fromkeys(inherited_grades))
                     teacher_section = guide_section if role == "guide" else (", ".join(inherited_sections) or "LIBRE")
-                    teacher_year = guide_year if role == "guide" else (first_group["academic_year"] if first_group else None)
+                    teacher_year = guide_year if role in ("guide", "director", "secretary") else (first_group["academic_year"] if first_group else None)
                     if role == "teacher" and new_subject_name:
                         subject_cursor = connection.execute("INSERT INTO subjects(name,grade,year,created_by) VALUES(?,?,?,?)", (new_subject_name, teacher_grade, teacher_year, session.get("teacher_id")))
                         subject_ids.append(subject_cursor.lastrowid)
