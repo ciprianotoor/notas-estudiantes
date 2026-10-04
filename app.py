@@ -1984,6 +1984,24 @@ def grades(student_id):
         if not teacher_can_access_subject_for_student(student_id, subject_id, teacher_id):
             flash("No tienes acceso a esta materia para el estudiante.", "error")
             return redirect(url_for("students"))
+        with db() as connection:
+            selected_subject = connection.execute("SELECT name FROM subjects WHERE id=?", (subject_id,)).fetchone()
+        if selected_subject and selected_subject["name"].strip().lower() == "conducta":
+            try:
+                conduct_score = float(request.form.get("conduct_score", ""))
+            except (TypeError, ValueError):
+                conduct_score = None
+            conduct_qualitative = request.form.get("conduct_qualitative", "").strip()
+            if conduct_score is None or not 0 <= conduct_score <= 100 or not conduct_qualitative:
+                flash("Conducta requiere calificación cuantitativa y cualitativa.", "error")
+            else:
+                with db() as connection:
+                    connection.execute("""INSERT INTO conduct_evaluations(student_id,partial,quantitative,qualitative,criteria,incidents,observations)
+                        VALUES(?,?,?,?,?,?,?) ON CONFLICT(student_id,partial) DO UPDATE SET quantitative=excluded.quantitative,
+                        qualitative=excluded.qualitative,criteria=excluded.criteria,incidents=excluded.incidents,observations=excluded.observations""",
+                        (student_id, partial, conduct_score, conduct_qualitative, request.form.get("conduct_criteria", "").strip(), request.form.get("conduct_incidents", "").strip(), request.form.get("conduct_observations", "").strip()))
+                flash(f"{partial_name(partial)} de conducta guardado.", "success")
+            return redirect(url_for("grades", student_id=student_id, subject_id=subject_id))
         try:
             values = [float(request.form.get(f"work{i}", 0) or 0) for i in range(1, 7)]
             exam = float(request.form.get("exam", 0) or 0)
@@ -2025,7 +2043,8 @@ def grades(student_id):
             FROM grade_audit ga LEFT JOIN teachers t ON t.id=ga.actor_teacher_id
             WHERE ga.student_id=? ORDER BY ga.created_at DESC, ga.id DESC LIMIT 30
         """, (student_id,)).fetchall()
-    return render_template("grades.html", student=student, partials=partials, final=final, history=history, subjects=subjects, current_subject_id=selected_subject_id, is_guide=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), is_secretary=teacher_is_secretary(teacher_id), can_edit_grades=can_edit_grades)
+    selected_subject_name = next((row["name"] for row in subjects if row["id"] == selected_subject_id), "")
+    return render_template("grades.html", student=student, partials=partials, final=final, history=history, subjects=subjects, current_subject_id=selected_subject_id, selected_subject_name=selected_subject_name, is_conduct=selected_subject_name.strip().lower() == "conducta", is_guide=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), is_secretary=teacher_is_secretary(teacher_id), can_edit_grades=can_edit_grades)
 
 
 @app.post("/students/<int:student_id>/profile")
