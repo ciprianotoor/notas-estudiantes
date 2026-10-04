@@ -149,6 +149,15 @@ def init_db():
             attendance REAL DEFAULT 0, comments TEXT DEFAULT '',
             UNIQUE(student_id, partial), FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS conduct_evaluations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            partial INTEGER NOT NULL CHECK(partial BETWEEN 1 AND 4),
+            quantitative REAL DEFAULT NULL,
+            qualitative TEXT NOT NULL DEFAULT '',
+            criteria TEXT DEFAULT '', incidents TEXT DEFAULT '', observations TEXT DEFAULT '',
+            UNIQUE(student_id, partial), FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+        );
         """)
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(students)")}
         if "subject" not in columns:
@@ -2043,6 +2052,13 @@ def update_profile(student_id):
     conduct_criteria = request.form.get("conduct_criteria", "").strip()
     conduct_incidents = request.form.get("conduct_incidents", "").strip()
     observations = request.form.get("observations", "").strip()
+    try:
+        conduct_partial = int(request.form.get("conduct_partial", "1"))
+    except (TypeError, ValueError):
+        conduct_partial = 0
+    if conduct_partial not in range(1, 5):
+        flash("Selecciona un parcial válido para la conducta.", "error")
+        return redirect(url_for("grades", student_id=student_id))
     with db() as connection:
         exists = connection.execute("SELECT 1 FROM students WHERE id=?", (student_id,)).fetchone()
         if not exists:
@@ -2052,6 +2068,12 @@ def update_profile(student_id):
                            SET conduct=?, conduct_score=?, conduct_criteria=?, conduct_incidents=?, observations=?
                            WHERE id=?""",
                            (f"{conduct_score:.2f}", conduct_score, conduct_criteria, conduct_incidents, observations, student_id))
+        connection.execute("""INSERT INTO conduct_evaluations(student_id,partial,quantitative,qualitative,criteria,incidents,observations)
+                           VALUES(?,?,?,?,?,?,?)
+                           ON CONFLICT(student_id,partial) DO UPDATE SET quantitative=excluded.quantitative,
+                           qualitative=excluded.qualitative,criteria=excluded.criteria,incidents=excluded.incidents,
+                           observations=excluded.observations""",
+                           (student_id, conduct_partial, conduct_score, request.form.get("conduct_qualitative", "").strip(), conduct_criteria, conduct_incidents, observations))
     flash("Conducta y observaciones guardadas.", "success")
     return redirect(url_for("grades", student_id=student_id))
 
@@ -2898,8 +2920,12 @@ def make_pdf(student_ids, selected_partials):
             f"SELECT s.*, g.name AS group_name FROM students s LEFT JOIN groups g ON g.id=s.group_id WHERE s.id IN ({placeholders}) ORDER BY s.name",
             tuple(student_ids)).fetchall()
         subject_rows = connection.execute("SELECT id, name FROM subjects").fetchall()
+        conduct_rows = connection.execute("SELECT * FROM conduct_evaluations WHERE student_id IN ({})".format(placeholders), tuple(student_ids)).fetchall()
     if not students: return "Estudiante no encontrado", 404
     subject_names = {row["id"]: row["name"] for row in subject_rows}
+    conduct_by_student = {}
+    for row in conduct_rows:
+        conduct_by_student.setdefault(row["student_id"], {})[row["partial"]] = dict(row)
     current = settings(); output = io.BytesIO()
     document = SimpleDocTemplate(output, pagesize=landscape(letter), rightMargin=.45*inch, leftMargin=.45*inch, topMargin=.4*inch, bottomMargin=.4*inch)
     styles = getSampleStyleSheet(); center_style = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER); story = []
@@ -2913,8 +2939,11 @@ def make_pdf(student_ids, selected_partials):
         subject_label = ", ".join(subject_names_list) if subject_names_list else "Sin materias registradas"
         partials_label = ", ".join(partial_name(p) for p in selected_partials) if selected_partials else "Todos los parciales"
         story += [Paragraph(current["school_name"], styles["Title"]), Paragraph("REPORTE ACADÉMICO", styles["Heading2"]), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 10)]
-        conduct_label = student["conduct"] or "Sin registrar"
-        conduct_quantitative = f"{student['conduct_score']:.2f} / 100" if student["conduct_score"] is not None else "Sin registrar"
+        conduct_entries = conduct_by_student.get(student["id"], {})
+        if not conduct_entries and student["conduct_score"] is not None:
+            conduct_entries[1] = {"quantitative": student["conduct_score"], "qualitative": student["conduct"] or "Sin registrar", "criteria": student["conduct_criteria"], "incidents": student["conduct_incidents"], "observations": student["observations"]}
+        conduct_label = conduct_entries.get(1, {}).get("qualitative") or student["conduct"] or "Sin registrar"
+        conduct_quantitative = f"{conduct_entries.get(1, {}).get('quantitative', student['conduct_score']):.2f} / 100" if conduct_entries.get(1, {}).get('quantitative', student['conduct_score']) is not None else "Sin registrar"
         conduct_data = [["Evaluación", "Cuantitativa", "Cualitativa", "Criterios utilizados", "Incidentes registrados", "Observaciones"], ["Conducta", conduct_quantitative, conduct_label, student['conduct_criteria'] or "Sin registrar", student['conduct_incidents'] or "Ninguno registrado", student['observations'] or "Sin observaciones"]]
         # Matriz MINED: cada corte tiene cuantitativa y cualitativa en columnas
         # paralelas; los semestres y el cierre anual también se promedian.
@@ -2959,9 +2988,12 @@ def make_pdf(student_ids, selected_partials):
             summary_data.append(["-"] + ["-"] * 10)
             detail_data.append(["-", "-", "Sin registros", "-", "-"])
         conduct_row = ["Desempeño personal y ciudadano (conducta)"]
-        conduct_quantitative_short = f"{student['conduct_score']:.2f}" if student["conduct_score"] is not None else "-"
-        for _ in range(5):
-            conduct_row.extend([conduct_quantitative_short, conduct_label])
+        for partial in range(1, 5):
+            entry = conduct_entries.get(partial, {})
+            conduct_quantitative_short = f"{entry['quantitative']:.2f}" if entry.get("quantitative") is not None else "Sin calificación"
+            conduct_row.extend([conduct_quantitative_short, entry.get("qualitative") or "Sin valoración"])
+        final_conduct = conduct_entries.get(4) or conduct_entries.get(1) or {}
+        conduct_row.extend(["-", final_conduct.get("qualitative") or "-"])
         summary_data.append(conduct_row)
         conduct_table = Table(conduct_data, colWidths=[.9*inch, 1.05*inch, 1.05*inch, 2.25*inch, 2.25*inch, 2.35*inch]); conduct_table.setStyle(header_style)
         summary_table = Table(summary_data, colWidths=[2.1*inch] + [.82*inch] * 10)
