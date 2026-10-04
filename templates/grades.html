@@ -20,4 +20,20 @@
 <div class="card"><h2>Historial de cambios</h2>{% if history %}<table><tr><th>Fecha y hora</th><th>Usuario</th><th>Parcial</th><th>Acción</th><th>Detalle</th></tr>{% for item in history %}<tr><td>{{ item.created_at }}</td><td>{{ item.actor_name or 'Sistema' }}</td><td>{{ item.partial }}</td><td>{{ item.action }}</td><td>{{ item.details }}</td></tr>{% endfor %}</table>{% else %}<p class="muted">Todavía no hay cambios registrados.</p>{% endif %}</div>
 <div class="actions no-print"><a class="button secondary" href="{{ url_for('students') }}">Volver a estudiantes</a>{% if is_guide or is_admin or is_secretary %}<a class="button" href="{{ url_for('teacher_pdf',student_id=student.id) }}">Imprimir boleta</a>{% endif %}</div>
 <style>.partials-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem}.partial-card{background:white;border-radius:12px;box-shadow:0 2px 12px #17203312;overflow:hidden;min-width:0}.partial-card summary{cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:1.2rem;font-size:1.1rem;font-weight:700;list-style:none}.partial-card summary::-webkit-details-marker{display:none}.partial-card summary:after{content:'+';color:#2563eb;font-size:1.4rem}.partial-card[open] summary:after{content:'−'}.partial-card summary strong{color:#087443}.partial-content{border-top:1px solid #eaecf0;padding:1.2rem}.work-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem}.work-grid label{font-size:.9rem}.work-grid small{display:block;color:#667085;margin-top:.35rem}.summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;margin-top:1rem;align-items:end}.summary-grid>div{background:#f8fafc;padding:.65rem;border-radius:8px}.summary-grid span{display:block;color:#667085;font-size:.8rem}.summary-grid strong{display:block;font-size:1.2rem;margin-top:.3rem}.exam-box{border:2px solid #2563eb!important;background:#eff6ff!important;text-align:left}.final-score{color:#087443}.recovery-box{background:#fff8eb;border:1px solid #fedf89;border-radius:8px;padding:.8rem;margin:1rem 0}.recovery-box h3{margin-top:0}.help{color:#667085;font-size:.9rem}.save-button{background:#b42318}.save-button:hover{background:#8f1d14}@media(max-width:720px){.partials-grid{grid-template-columns:minmax(0,1fr)}.summary-grid,.work-grid{grid-template-columns:minmax(0,1fr)}.partial-content{padding:.85rem}}</style>
+<script>
+document.querySelectorAll('input[name="conduct_score"]').forEach(function(score) {
+  var form = score.closest('form');
+  var qualitative = form && form.querySelector('select[name="conduct_qualitative"]');
+  if (!qualitative) return;
+  qualitative.disabled = true;
+  qualitative.required = false;
+  function updateConductLabel() {
+    var value = Number(score.value);
+    var code = value >= 90 ? 'AA' : value >= 76 ? 'AS' : value >= 60 ? 'AF' : value >= 0 ? 'AI' : '';
+    qualitative.value = code;
+  }
+  score.addEventListener('input', updateConductLabel);
+  updateConductLabel();
+});
+</script>
 {% endblock %}
