@@ -2918,8 +2918,8 @@ def make_pdf(student_ids, selected_partials):
         # Matriz MINED: cada corte tiene cuantitativa y cualitativa en columnas
         # paralelas; los semestres y el cierre anual también se promedian.
         summary_data = [
-            ["Asignatura / componente", "Parcial I", "", "Parcial II", "", "Parcial III", "", "Parcial IV", "", "Semestre I", "", "Semestre II", "", "Nota final", ""],
-            ["", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa"],
+            ["Asignatura / componente", "Parcial I", "", "Parcial II", "", "Parcial III", "", "Parcial IV", "", "Nota final", ""],
+            ["", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa"],
         ]
         detail_data = [["Materia", "Parcial", "Evaluación", "Nota", "Fecha"]]
         extraordinary = [["Materia", "Parcial", "Tipo", "Fecha", "Nota / 40"]]
@@ -2948,38 +2948,34 @@ def make_pdf(student_ids, selected_partials):
                 detail_data.append([subject_name, partial_name(p), "Examen aplicado", f"{applied_exam(row):.2f} / 40", row.get("exam_date") or row.get("recovery_date") or "-"])
                 detail_data.append([subject_name, partial_name(p), "Nota final del parcial", f"{row['result']:.2f} / 100", "-"])
             visible = {p: subject_values.get(p) for p in range(1, 5)}
-            semester_one = [visible[p] for p in (1, 2) if visible[p] is not None and (not selected_partials or p in selected_partials)]
-            semester_two = [visible[p] for p in (3, 4) if visible[p] is not None and (not selected_partials or p in selected_partials)]
-            semester_values = [sum(values) / len(values) if values else None for values in (semester_one, semester_two)]
-            final_values = [value for value in semester_values if value is not None]
+            final_values = [value for p, value in subject_values.items() if not selected_partials or p in selected_partials]
             final_value = sum(final_values) / len(final_values) if final_values else None
             row_data = [subject_name]
-            for value in [visible[1], visible[2], visible[3], visible[4], semester_values[0], semester_values[1], final_value]:
+            for value in [visible[1], visible[2], visible[3], visible[4], final_value]:
                 row_data.extend([f"{value:.2f}" if value is not None else "Sin calificación", qualitative_learning_label(value) if value is not None else "Sin calificación"])
             summary_data.append(row_data)
         if len(summary_data) == 2:
-            summary_data.append(["-"] + ["-"] * 14)
+            summary_data.append(["-"] + ["-"] * 10)
             detail_data.append(["-", "-", "Sin registros", "-", "-"])
         conduct_value = student["conduct_score"]
         conduct_label = qualitative_learning_label(conduct_value) if conduct_value is not None else (student["conduct"] or "Sin registrar")
         conduct_row = ["Desempeño personal y ciudadano (conducta)"]
-        for _ in range(7):
+        for _ in range(5):
             conduct_row.extend(["-", conduct_label])
         summary_data.append(conduct_row)
         conduct_table = Table(conduct_data, colWidths=[1.1*inch, 1.1*inch, 2.45*inch, 2.45*inch, 2.55*inch]); conduct_table.setStyle(header_style)
-        summary_table = Table(summary_data, colWidths=[1.65*inch] + [.68*inch] * 14)
+        summary_table = Table(summary_data, colWidths=[2.1*inch] + [.82*inch] * 10)
         summary_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), "#17365d"), ("TEXTCOLOR", (0, 0), (-1, 0), "white"),
             ("BACKGROUND", (0, 1), (-1, 1), "#dbe7f3"), ("TEXTCOLOR", (0, 1), (-1, 1), "#17365d"),
             ("SPAN", (0, 0), (0, 1)), ("SPAN", (1, 0), (2, 0)), ("SPAN", (3, 0), (4, 0)),
             ("SPAN", (5, 0), (6, 0)), ("SPAN", (7, 0), (8, 0)), ("SPAN", (9, 0), (10, 0)),
-            ("SPAN", (11, 0), (12, 0)), ("SPAN", (13, 0), (14, 0)),
             ("GRID", (0, 0), (-1, -1), .4, "#b7c3d0"), ("ALIGN", (1, 0), (-1, -1), "CENTER"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("FONTSIZE", (0, 0), (-1, -1), 6), ("PADDING", (0, 0), (-1, -1), 3),
         ]))
         detail_table = Table(detail_data, colWidths=[1.25*inch, .8*inch, 1.7*inch, 1.1*inch, 1.1*inch]); detail_table.setStyle(header_style)
         extraordinary_table = Table(extraordinary, colWidths=[1.2*inch, .75*inch, 1.7*inch, 1.2*inch, .9*inch]); extraordinary_table.setStyle(header_style)
-        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. El Semestre I promedia Parcial I y II; el Semestre II promedia Parcial III y IV; la nota final promedia ambos semestres. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). La conducta se registra cualitativamente como desempeño personal y ciudadano. En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado."
+        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final de esta boleta es el promedio de los cuatro cortes registrados. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). La conducta se registra cualitativamente como desempeño personal y ciudadano. En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado."
         story += [Paragraph("Resumen de notas por materia y cortes evaluativos", styles["Heading3"]), summary_table, Spacer(1, 6), Paragraph("La conducta se registra como desempeño personal y ciudadano, de forma cualitativa.", styles["Normal"]), Spacer(1, 8), Paragraph("Detalle de conducta", styles["Heading3"]), conduct_table, Spacer(1, 10)]
         if len(extraordinary) > 1:
             story += [Paragraph("Notas extraordinarias registradas", styles["Heading3"]), extraordinary_table, Spacer(1, 10)]
