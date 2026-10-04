@@ -1,6 +1,8 @@
 # Notas Estudiantes — instrucciones rápidas
 
-Este proyecto es una aplicación Flask para gestionar estudiantes, grupos y notas.
+Este proyecto es una aplicación Flask para gestionar años lectivos, grados, secciones, docentes guía, estudiantes, asignaturas, evaluaciones y boletines.
+
+Flujo académico: `Año lectivo → Grado → Sección → Matrícula → Asignaturas → Evaluaciones → Boletín`.
 
 Requisitos
 - Python 3.10+ (se recomienda 3.11+)
@@ -25,8 +27,9 @@ DB_PATH=./data/notas.db .venv/bin/python3 migrate_to_multi_teachers.py
 Flujo básico
 - Accede a `http://127.0.0.1:5000`
 - En una instalación nueva, utiliza la cuenta administrativa creada por el instalador y cambia la contraseña inmediatamente.
-- En `Configuración -> Gestionar docentes` crea nuevos docentes.
-- Cada docente tiene sus propios grupos y estudiantes (filtrado por `teacher_id`).
+- En `Configuración -> Estructura académica` crea el año, grado y sección.
+- El administrador gestiona el catálogo de asignaturas y las cuentas docentes.
+- El docente guía trabaja únicamente con su sección y sus estudiantes.
 
 Notas de seguridad y despliegue
 - No uses el servidor de desarrollo en producción; usa un WSGI (gunicorn/uvicorn) detrás de un proxy.
@@ -45,7 +48,7 @@ El proyecto incluye un `compose.yaml` con un servicio `notas` que expone el puer
 - Servicio: `notas`
 - Nombre del contenedor: `notas-estudiantes`
 - Puerto: host `5000` -> contenedor `5000`
-- Volumen: `datos-notas` montado en `/data` dentro del contenedor
+- Volumen: `./data` montado en `/data` dentro del contenedor
 - Ruta del DB dentro del contenedor: `/data/notas.db`
 
 Comandos Docker útiles:
