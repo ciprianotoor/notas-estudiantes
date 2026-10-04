@@ -132,6 +132,9 @@ def init_db():
         for column, definition in (("grade", "TEXT DEFAULT ''"), ("section", "TEXT DEFAULT ''"), ("academic_year", "INTEGER DEFAULT NULL")):
             if column not in teacher_columns:
                 connection.execute(f"ALTER TABLE teachers ADD COLUMN {column} {definition}")
+        for column, definition in (("first_name", "TEXT DEFAULT ''"), ("last_name", "TEXT DEFAULT ''"), ("hire_date", "TEXT DEFAULT ''")):
+            if column not in teacher_columns:
+                connection.execute(f"ALTER TABLE teachers ADD COLUMN {column} {definition}")
         teacher_setting_columns = {row["name"] for row in connection.execute("PRAGMA table_info(teacher_settings)")}
         if "theme" not in teacher_setting_columns:
             connection.execute("ALTER TABLE teacher_settings ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'")
@@ -839,6 +842,9 @@ def groups():
             flash("Solo el director puede crear grupos y organizar docentes.", "error")
             return redirect(url_for("groups"))
         name = request.form.get("name", "").strip()
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+        hire_date = request.form.get("hire_date", "").strip()
         grade = request.form.get("grade", "").strip()
         section = request.form.get("section", "").strip().upper()
         academic_year = request.form.get("academic_year", type=int)
@@ -1416,13 +1422,17 @@ def teachers_view():
             non_admin_subject_teachers = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='teacher'").fetchone()["n"]
             existing_director = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='director'").fetchone()["n"]
             existing_secretary = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='secretary'").fetchone()["n"]
+        if role in ("director", "secretary"):
+            name = " ".join(part for part in (first_name, last_name) if part).strip()
         if role not in ("guide", "teacher", "director", "secretary"):
             flash("Selecciona un tipo de docente válido.", "error")
         elif non_admin_guides == 0 and role not in ("guide", "director", "secretary"):
             flash("El primer docente que registres debe ser docente guía. Después podrás crear docentes de materia.", "error")
         elif non_admin_guides > 0 and non_admin_subject_teachers == 0 and role not in ("teacher", "director", "secretary"):
             flash("Después del docente guía debes registrar un docente de materia para completar esta etapa.", "error")
-        elif not name or not password:
+        elif role in ("director", "secretary") and (not first_name or not last_name or not hire_date or not password):
+            flash("Nombres, apellidos, fecha de ingreso y contraseña son obligatorios.", "error")
+        elif role in ("guide", "teacher") and (not name or not password):
             flash("Nombre y contraseña son obligatorios.", "error")
         elif role == "guide" and (not guide_grade or not guide_section or not guide_year):
             flash("Para el docente guía indica grado, sección y año de referencia.", "error")
@@ -1453,8 +1463,8 @@ def teachers_view():
                     if role == "teacher" and new_subject_name:
                         subject_cursor = connection.execute("INSERT INTO subjects(name,grade,year,created_by) VALUES(?,?,?,?)", (new_subject_name, teacher_grade, teacher_year, session.get("teacher_id")))
                         subject_ids.append(subject_cursor.lastrowid)
-                    cursor = connection.execute("INSERT INTO teachers(name,email,password,grade,section,academic_year) VALUES(?,?,?,?,?,?)",
-                                                (name, email, generate_password_hash(password), teacher_grade, teacher_section, teacher_year))
+                    cursor = connection.execute("INSERT INTO teachers(name,email,password,grade,section,academic_year,first_name,last_name,hire_date) VALUES(?,?,?,?,?,?,?,?,?)",
+                                                (name, email, generate_password_hash(password), teacher_grade, teacher_section, teacher_year, first_name, last_name, hire_date))
                     new_teacher_id = cursor.lastrowid
                     connection.execute("INSERT INTO teacher_roles(teacher_id,role) VALUES(?,?)", (new_teacher_id, role))
                     connection.execute("INSERT OR IGNORE INTO teacher_capabilities(teacher_id,capability) VALUES(?,?)", (new_teacher_id, role))
