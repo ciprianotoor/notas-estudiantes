@@ -1194,6 +1194,7 @@ def index():
     is_admin = teacher_is_admin(teacher_id)
     is_guide = is_guide_teacher(teacher_id)
     setup = None
+    admin_snapshot = None
     group_summary = []
     teacher_summary = []
     with db() as connection:
@@ -1255,6 +1256,13 @@ def index():
             """, (teacher_id, teacher_id)).fetchone()["n"]
     if is_admin:
         with db() as connection:
+            admin_snapshot = {
+                "students": connection.execute("SELECT COUNT(*) AS n FROM students WHERE enrollment_status='active'").fetchone()["n"],
+                "groups": connection.execute("SELECT COUNT(*) AS n FROM groups").fetchone()["n"],
+                "teachers": connection.execute("SELECT COUNT(*) AS n FROM teachers WHERE is_admin=0").fetchone()["n"],
+                "classes": connection.execute("SELECT COUNT(*) AS n FROM classes").fetchone()["n"],
+                "pending_notes": connection.execute("SELECT COUNT(*) AS n FROM partial_grades WHERE COALESCE(status,'En proceso') NOT IN ('Entregado','Cerrado')").fetchone()["n"],
+            }
             checks = [
                 ("Crear usuarios", "Director y docentes", connection.execute("SELECT COUNT(*) AS n FROM teachers WHERE is_admin=0").fetchone()["n"] > 0, "teachers_view"),
                 ("Crear materias", "Catálogo de asignaturas", connection.execute("SELECT COUNT(*) AS n FROM subject_catalog WHERE active=1").fetchone()["n"] > 0, "subject_catalog"),
@@ -1277,7 +1285,7 @@ def index():
                            average=round(sum(values) / len(values), 2) if values else 0, grade_count=count,
                            is_guide=is_guide, setup=setup, group_summary=group_summary,
                            teacher_summary=teacher_summary, is_admin=teacher_is_admin(teacher_id),
-                           is_secretary=teacher_is_secretary(teacher_id))
+                           is_secretary=teacher_is_secretary(teacher_id), admin_snapshot=admin_snapshot)
 
 
 @app.route("/groups", methods=["GET", "POST"])
