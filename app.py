@@ -560,6 +560,7 @@ def init_db():
             ('CV', 'Creciendo en Valores', 'Formación ciudadana'),
             ('AEP', 'Educación para Aprender, Emprender y Prosperar', 'Emprendimiento'),
             ('TAC', 'Talleres de Arte y Cultura', 'Arte y cultura'),
+            ('CON', 'Conducta', 'Desempeño personal y ciudadano'),
         ]
         for code, name, area in default_subjects:
             connection.execute(
