@@ -695,7 +695,7 @@ def index():
     teacher_summary = []
     with db() as connection:
         if is_admin:
-            students = connection.execute("SELECT s.*, g.name AS group_name FROM students s LEFT JOIN groups g ON g.id=s.group_id ORDER BY s.name").fetchall()
+            students = connection.execute("SELECT s.*, g.name AS group_name FROM students s LEFT JOIN groups g ON g.id=s.group_id WHERE s.teacher_id=? OR g.teacher_id=? ORDER BY s.name", (teacher_id, teacher_id)).fetchall()
             count = connection.execute("SELECT COUNT(*) AS n FROM partial_grades").fetchone()["n"]
             group_summary = connection.execute("""
                 SELECT g.id,g.name,COUNT(DISTINCT s.id) AS students,COUNT(DISTINCT c.id) AS classes
@@ -1073,7 +1073,7 @@ def students():
     is_guide = is_guide_teacher(teacher_id)
     is_admin = teacher_is_admin(teacher_id)
     with db() as connection:
-        if is_guide or is_admin:
+        if is_admin:
             query = """SELECT s.*, g.name AS group_name, MIN(sc.class_id) AS class_id,
                 GROUP_CONCAT(DISTINCT c.name) AS class_name,
                 GROUP_CONCAT(DISTINCT subj.name) AS enrolled_subjects,
@@ -1085,6 +1085,21 @@ def students():
                 LEFT JOIN subjects subj ON subj.id=c.subject_id
                 LEFT JOIN partial_grades pg ON pg.student_id=s.id WHERE 1=1"""
             params = []
+        elif is_guide:
+            query = """
+                SELECT s.*, g.name AS group_name, MIN(sc.class_id) AS class_id,
+                       GROUP_CONCAT(DISTINCT c.name) AS class_name,
+                       GROUP_CONCAT(DISTINCT subj.name) AS enrolled_subjects,
+                       GROUP_CONCAT(DISTINCT sc.class_id) AS enrolled_class_ids,
+                       COUNT(DISTINCT pg.id) AS grade_records
+                FROM students s LEFT JOIN groups g ON g.id=s.group_id
+                LEFT JOIN student_classes sc ON sc.student_id=s.id
+                LEFT JOIN classes c ON c.id=sc.class_id
+                LEFT JOIN subjects subj ON subj.id=c.subject_id
+                LEFT JOIN partial_grades pg ON pg.student_id=s.id
+                WHERE (s.teacher_id=? OR g.teacher_id=?)
+            """
+            params = [teacher_id, teacher_id]
         else:
             query = """
                 SELECT s.*, g.name AS group_name, MIN(sc.class_id) AS class_id,
@@ -1117,7 +1132,8 @@ def students():
         if is_guide:
             class_rows = connection.execute("""SELECT c.*, s.name AS subject_name, t.name AS teacher_name
                 FROM classes c LEFT JOIN subjects s ON s.id=c.subject_id
-                LEFT JOIN teachers t ON t.id=c.teacher_id ORDER BY c.name""").fetchall()
+                LEFT JOIN teachers t ON t.id=c.teacher_id
+                JOIN groups g ON g.id=c.group_id AND g.teacher_id=? ORDER BY c.name""", (teacher_id,)).fetchall()
         elif is_admin:
             class_rows = connection.execute("""SELECT c.*, s.name AS subject_name, t.name AS teacher_name
                 FROM classes c LEFT JOIN subjects s ON s.id=c.subject_id
