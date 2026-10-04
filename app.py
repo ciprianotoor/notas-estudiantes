@@ -190,6 +190,11 @@ def init_db():
             teacher_id INTEGER NOT NULL UNIQUE, role TEXT NOT NULL DEFAULT 'teacher',
             FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS teacher_capabilities (
+            teacher_id INTEGER NOT NULL, capability TEXT NOT NULL,
+            PRIMARY KEY(teacher_id, capability),
+            FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS assignments (
             teacher_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
             PRIMARY KEY(teacher_id,subject_id),
@@ -251,6 +256,7 @@ def init_db():
         if teacher_id and not connection.execute("SELECT 1 FROM teacher_roles WHERE teacher_id=?", (teacher_id,)).fetchone():
             connection.execute("INSERT INTO teacher_roles(teacher_id,role) VALUES(?,?)", (teacher_id, 'guide'))
         connection.execute("UPDATE teacher_roles SET role='guide' WHERE teacher_id=?", (teacher_id,))
+        connection.execute("INSERT OR IGNORE INTO teacher_capabilities(teacher_id,capability) SELECT teacher_id,role FROM teacher_roles")
         # Assign existing groups and students to the default teacher if unset
         connection.execute("UPDATE groups SET teacher_id=? WHERE teacher_id IS NULL", (teacher_id,))
         connection.execute("UPDATE students SET teacher_id=? WHERE teacher_id IS NULL", (teacher_id,))
@@ -344,6 +350,19 @@ def get_teacher_role(teacher_id):
     return row["role"] if row else "teacher"
 
 
+def teacher_has_capability(teacher_id, capability):
+    if not teacher_id:
+        return False
+    if capability == "admin":
+        return teacher_is_admin(teacher_id)
+    with db() as connection:
+        return bool(connection.execute("SELECT 1 FROM teacher_capabilities WHERE teacher_id=? AND capability=?", (teacher_id, capability)).fetchone())
+
+
+def teacher_is_director(teacher_id=None):
+    return teacher_has_capability(teacher_id or session.get("teacher_id"), "director")
+
+
 def teacher_is_admin(teacher_id=None):
     teacher_id = teacher_id or session.get("teacher_id")
     if not teacher_id:
@@ -367,7 +386,7 @@ def current_teacher_info():
 
 def is_guide_teacher(teacher_id=None):
     teacher_id = teacher_id or session.get("teacher_id")
-    return bool(teacher_id and not teacher_is_admin(teacher_id) and get_teacher_role(teacher_id) == "guide")
+    return bool(teacher_id and not teacher_is_admin(teacher_id) and teacher_has_capability(teacher_id, "guide"))
 
 
 def teacher_has_class_access(student_id, teacher_id=None):
@@ -489,6 +508,17 @@ def admin_required(view):
         teacher_id = session.get("teacher_id")
         if session.get("role") != "teacher" or not teacher_is_admin(teacher_id):
             flash("Solo el administrador puede gestionar las cuentas docentes.", "error")
+            return redirect(url_for("index"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def director_or_admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        teacher_id = session.get("teacher_id")
+        if session.get("role") != "teacher" or not (teacher_is_admin(teacher_id) or teacher_is_director(teacher_id)):
+            flash("Solo el administrador o el director pueden gestionar la estructura académica.", "error")
             return redirect(url_for("index"))
         return view(*args, **kwargs)
     return wrapped
@@ -863,7 +893,7 @@ def delete_group(group_id):
 
 
 @app.route("/subjects", methods=["GET", "POST"])
-@admin_required
+@director_or_admin_required
 @workflow_required(1)
 def subjects_view():
     if request.method == "POST":
@@ -886,7 +916,7 @@ def subjects_view():
 
 
 @app.route("/classes", methods=["GET", "POST"])
-@admin_required
+@director_or_admin_required
 @workflow_required(2)
 def classes_view():
     teacher_id = session.get("teacher_id")
@@ -961,7 +991,7 @@ def delete_class(class_id):
 
 
 @app.route("/assignments", methods=["GET", "POST"])
-@admin_required
+@director_or_admin_required
 def assignments_view():
     if request.method == "POST":
         teacher_id = request.form.get("teacher_id", type=int)
@@ -1357,11 +1387,11 @@ def teachers_view():
         with db() as state_connection:
             non_admin_guides = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='guide'").fetchone()["n"]
             non_admin_subject_teachers = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='teacher'").fetchone()["n"]
-        if role not in ("guide", "teacher"):
+        if role not in ("guide", "teacher", "director"):
             flash("Selecciona un tipo de docente válido.", "error")
-        elif non_admin_guides == 0 and role != "guide":
+        elif non_admin_guides == 0 and role not in ("guide", "director"):
             flash("El primer docente que registres debe ser docente guía. Después podrás crear docentes de materia.", "error")
-        elif non_admin_guides > 0 and non_admin_subject_teachers == 0 and role != "teacher":
+        elif non_admin_guides > 0 and non_admin_subject_teachers == 0 and role not in ("teacher", "director"):
             flash("Después del docente guía debes registrar un docente de materia para completar esta etapa.", "error")
         elif not name or not password:
             flash("Nombre y contraseña son obligatorios.", "error")
@@ -1394,6 +1424,7 @@ def teachers_view():
                                                 (name, email, generate_password_hash(password), teacher_grade, teacher_section, teacher_year))
                     new_teacher_id = cursor.lastrowid
                     connection.execute("INSERT INTO teacher_roles(teacher_id,role) VALUES(?,?)", (new_teacher_id, role))
+                    connection.execute("INSERT OR IGNORE INTO teacher_capabilities(teacher_id,capability) VALUES(?,?)", (new_teacher_id, role))
                     flash("Docente creado correctamente. El docente guía podrá asignarlo a clases desde sus grupos.", "success")
                 except sqlite3.IntegrityError:
                     flash("No se pudo crear el docente (posible duplicado).", "error")
