@@ -2944,7 +2944,17 @@ def make_pdf(student_ids, selected_partials):
             conduct_entries[1] = {"quantitative": student["conduct_score"], "qualitative": student["conduct"] or "Sin registrar", "criteria": student["conduct_criteria"], "incidents": student["conduct_incidents"], "observations": student["observations"]}
         conduct_label = conduct_entries.get(1, {}).get("qualitative") or student["conduct"] or "Sin registrar"
         conduct_quantitative = f"{conduct_entries.get(1, {}).get('quantitative', student['conduct_score']):.2f} / 100" if conduct_entries.get(1, {}).get('quantitative', student['conduct_score']) is not None else "Sin registrar"
-        conduct_data = [["Evaluación", "Cuantitativa", "Cualitativa", "Criterios utilizados", "Incidentes registrados", "Observaciones"], ["Conducta", conduct_quantitative, conduct_label, student['conduct_criteria'] or "Sin registrar", student['conduct_incidents'] or "Ninguno registrado", student['observations'] or "Sin observaciones"]]
+        conduct_data = [["Parcial", "Cuantitativa", "Cualitativa", "Criterios utilizados", "Incidentes registrados", "Observaciones"]]
+        for partial in range(1, 5):
+            entry = conduct_entries.get(partial, {})
+            conduct_data.append([
+                partial_name(partial),
+                f"{entry['quantitative']:.2f} / 100" if entry.get("quantitative") is not None else "Sin calificación",
+                entry.get("qualitative") or "Sin valoración",
+                entry.get("criteria") or "Sin registrar",
+                entry.get("incidents") or "Ninguno registrado",
+                entry.get("observations") or "Sin observaciones",
+            ])
         # Matriz MINED: cada corte tiene cuantitativa y cualitativa en columnas
         # paralelas; los semestres y el cierre anual también se promedian.
         summary_data = [
@@ -2987,7 +2997,7 @@ def make_pdf(student_ids, selected_partials):
         if len(summary_data) == 2:
             summary_data.append(["-"] + ["-"] * 10)
             detail_data.append(["-", "-", "Sin registros", "-", "-"])
-        conduct_row = ["Desempeño personal y ciudadano (conducta)"]
+        conduct_row = ["Conducta (desempeño personal y ciudadano)"]
         for partial in range(1, 5):
             entry = conduct_entries.get(partial, {})
             conduct_quantitative_short = f"{entry['quantitative']:.2f}" if entry.get("quantitative") is not None else "Sin calificación"
