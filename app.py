@@ -1976,7 +1976,7 @@ def academic_structure():
         grades = connection.execute('SELECT * FROM grades WHERE active=1 ORDER BY name').fetchall()
         guides = connection.execute('SELECT id,name FROM teachers WHERE is_admin=0 ORDER BY name').fetchall()
         sections = connection.execute('SELECT s.*, ay.year, g.name AS grade_name, t.name AS guide_name FROM sections s JOIN academic_years ay ON ay.id=s.academic_year_id JOIN grades g ON g.id=s.grade_id LEFT JOIN teachers t ON t.id=s.teacher_guide_id WHERE s.active=1 ORDER BY ay.year DESC, g.name, s.name').fetchall()
-    return render_template('academic_structure.html', years=years, grades=grades, guides=guides, sections=sections)
+    return render_template('academic_structure_v2.html', years=years, grades=grades, guides=guides, sections=sections)
 
 
 @app.get('/academic-structure/mined-reference')
