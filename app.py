@@ -138,6 +138,9 @@ def init_db():
         for column, definition in (("employment_status", "TEXT NOT NULL DEFAULT 'Activo'"), ("status_start_date", "TEXT DEFAULT ''"), ("status_end_date", "TEXT DEFAULT ''"), ("reentry_date", "TEXT DEFAULT ''")):
             if column not in teacher_columns:
                 connection.execute(f"ALTER TABLE teachers ADD COLUMN {column} {definition}")
+        for column, definition in (("account_type", "TEXT NOT NULL DEFAULT 'Docente'"), ("teaching_level", "TEXT DEFAULT ''"), ("teaching_functions", "TEXT DEFAULT ''")):
+            if column not in teacher_columns:
+                connection.execute(f"ALTER TABLE teachers ADD COLUMN {column} {definition}")
         teacher_setting_columns = {row["name"] for row in connection.execute("PRAGMA table_info(teacher_settings)")}
         if "theme" not in teacher_setting_columns:
             connection.execute("ALTER TABLE teacher_settings ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'")
@@ -1430,6 +1433,15 @@ def teachers_view():
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "").strip()
         role = request.form.get("role", "teacher")
+        account_type = request.form.get("account_type", "Docente").strip() or "Docente"
+        teaching_level = request.form.get("teaching_level", "").strip()
+        teaching_functions = request.form.get("teaching_functions", "").strip()
+        if account_type == "Director": role = "director"
+        elif account_type == "Secretaría": role = "secretary"
+        elif account_type == "Docente":
+            role = "teacher" if "materia" in teaching_functions.lower() or teaching_functions == "" else "guide"
+            if teaching_level == "Primaria":
+                teaching_functions = "guia,materia" if "materia" in teaching_functions.lower() else "guia"
         group_ids = [int(value) for value in request.form.getlist("group_id") if value.isdigit()]
         subject_ids = [int(value) for value in request.form.getlist("subject_id") if value.isdigit()]
         new_subject_name = request.form.get("new_subject_name", "").strip()
@@ -1484,8 +1496,8 @@ def teachers_view():
                     if role == "teacher" and new_subject_name:
                         subject_cursor = connection.execute("INSERT INTO subjects(name,grade,year,created_by) VALUES(?,?,?,?)", (new_subject_name, teacher_grade, teacher_year, session.get("teacher_id")))
                         subject_ids.append(subject_cursor.lastrowid)
-                    cursor = connection.execute("INSERT INTO teachers(name,email,password,grade,section,academic_year,first_name,last_name,hire_date,employment_status,status_start_date,status_end_date,reentry_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                                (name, email, generate_password_hash(password), teacher_grade, teacher_section, teacher_year, first_name, last_name, hire_date, employment_status, status_start_date, status_end_date, reentry_date))
+                    cursor = connection.execute("INSERT INTO teachers(name,email,password,grade,section,academic_year,first_name,last_name,hire_date,employment_status,status_start_date,status_end_date,reentry_date,account_type,teaching_level,teaching_functions) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                                (name, email, generate_password_hash(password), teacher_grade, teacher_section, teacher_year, first_name, last_name, hire_date, employment_status, status_start_date, status_end_date, reentry_date, account_type, teaching_level, teaching_functions))
                     new_teacher_id = cursor.lastrowid
                     connection.execute("INSERT INTO teacher_roles(teacher_id,role) VALUES(?,?)", (new_teacher_id, role))
                     connection.execute("INSERT OR IGNORE INTO teacher_capabilities(teacher_id,capability) VALUES(?,?)", (new_teacher_id, role))
