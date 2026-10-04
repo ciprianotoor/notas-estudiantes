@@ -1258,8 +1258,6 @@ def index():
             checks = [
                 ("Crear usuarios", "Director y docentes", connection.execute("SELECT COUNT(*) AS n FROM teachers WHERE is_admin=0").fetchone()["n"] > 0, "teachers_view"),
                 ("Crear materias", "Catálogo de asignaturas", connection.execute("SELECT COUNT(*) AS n FROM subject_catalog WHERE active=1").fetchone()["n"] > 0, "subject_catalog"),
-                ("Crear grados y grupos", "Año lectivo, grado y sección", connection.execute("SELECT COUNT(*) AS n FROM groups").fetchone()["n"] > 0, "academic_structure"),
-                ("Asignar docentes", "Docente guía responsable", connection.execute("SELECT COUNT(*) AS n FROM groups WHERE teacher_id IS NOT NULL").fetchone()["n"] > 0, "academic_structure"),
                 ("Registrar estudiantes", "Matrículas activas", connection.execute("SELECT COUNT(*) AS n FROM students WHERE enrollment_status='active'").fetchone()["n"] > 0, "students"),
             ]
         setup = {"level": setup_level(), "pending": [{"step": i + 1, "label": label, "detail": detail, "done": done, "url": url_for(target)} for i, (label, detail, done, target) in enumerate(checks)]}
