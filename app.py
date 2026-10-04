@@ -2005,11 +2005,11 @@ def subject_catalog():
         except sqlite3.IntegrityError:
             with db() as connection:
                 duplicate = connection.execute('SELECT * FROM subject_catalog WHERE code=? COLLATE NOCASE OR name=? COLLATE NOCASE LIMIT 1', (request.form.get('code','').strip(), request.form.get('name','').strip())).fetchone()
-            return render_template('subject_catalog_v2.html', subjects=_catalog_rows(), duplicate=duplicate, attempted=dict(request.form)), 409
+            return render_template('subject_catalog_v3.html', subjects=_catalog_rows(), duplicate=duplicate, attempted=dict(request.form)), 409
         except (sqlite3.IntegrityError, ValueError) as error:
             flash(f'No se pudo guardar: {error}', 'error')
         return redirect(url_for('subject_catalog'))
-    return render_template('subject_catalog_v2.html', subjects=_catalog_rows())
+    return render_template('subject_catalog_v3.html', subjects=_catalog_rows())
 
 
 def _catalog_rows():
