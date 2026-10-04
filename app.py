@@ -1432,6 +1432,11 @@ def teachers_view():
         hire_date = request.form.get("hire_date", "").strip()
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "").strip()
+        employment_status = request.form.get("employment_status", "Activo").strip() or "Activo"
+        status_start_date = request.form.get("status_start_date", hire_date).strip()
+        status_end_date = request.form.get("status_end_date", "").strip()
+        reentry_date = request.form.get("reentry_date", "").strip()
+        employment_reason = request.form.get("employment_reason", "").strip()
         role = request.form.get("role", "teacher")
         account_type = request.form.get("account_type", "Docente").strip() or "Docente"
         teaching_level = request.form.get("teaching_level", "").strip()
