@@ -535,7 +535,7 @@ def current_teacher_info():
         row = connection.execute("SELECT t.name,t.email,t.is_admin,COALESCE(r.role,'teacher') AS role FROM teachers t LEFT JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.id=?", (teacher_id,)).fetchone()
     if not row:
         return None
-    role_label = "Administrador" if row["is_admin"] else {"director": "Director académico", "secretary": "Secretaría", "guide": "Docente guía", "teacher": "Docente de materia"}.get(row["role"], "Cuenta académica")
+    role_label = "Director / Administrador" if row["is_admin"] else {"director": "Director / Administrador", "secretary": "Docente guía", "guide": "Docente guía", "teacher": "Docente guía"}.get(row["role"], "Docente guía")
     return {**dict(row), "role_label": role_label}
 
 
@@ -713,14 +713,13 @@ def setup_level():
     """Nivel del asistente. Las cuentas deben quedar completas antes de lo académico."""
     with db() as connection:
         guides = connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='guide'").fetchone()["n"]
-        subject_teachers = connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='teacher'").fetchone()["n"]
         groups = connection.execute("SELECT COUNT(*) AS n FROM groups").fetchone()["n"]
-        subjects = connection.execute("SELECT COUNT(*) AS n FROM subjects").fetchone()["n"]
+        subjects = connection.execute("SELECT COUNT(*) AS n FROM subject_catalog WHERE active=1").fetchone()["n"]
         classes = connection.execute("SELECT COUNT(*) AS n FROM classes").fetchone()["n"]
         students = connection.execute("SELECT COUNT(*) AS n FROM students").fetchone()["n"]
     if guides == 0:
         return 0
-    if groups == 0 or subjects == 0 or subject_teachers == 0:
+    if groups == 0 or subjects == 0:
         return 1
     if classes == 0:
         return 2
@@ -1568,12 +1567,17 @@ def teachers_view():
         account_type = request.form.get("account_type", "Docente").strip() or "Docente"
         teaching_level = request.form.get("teaching_level", "").strip()
         teaching_functions = request.form.get("teaching_functions", "").strip()
-        if account_type == "Director": role = "director"
-        elif account_type == "Secretaría": role = "secretary"
-        elif account_type == "Docente":
-            role = "teacher" if "materia" in teaching_functions.lower() or teaching_functions == "" else "guide"
-            if teaching_level == "Primaria":
-                teaching_functions = "guia,materia" if "materia" in teaching_functions.lower() else "guia"
+        is_director_account = account_type == "Director" or role == "director"
+        if is_director_account:
+            role = "guide"
+            account_type = "Director"
+        elif account_type == "Secretaría":
+            role = "guide"
+            account_type = "Docente"
+        else:
+            # En la arquitectura actual todo docente es docente guía.
+            role = "guide"
+            account_type = "Docente"
         group_ids = [int(value) for value in request.form.getlist("group_id") if value.isdigit()]
         subject_ids = [int(value) for value in request.form.getlist("subject_id") if value.isdigit()]
         new_subject_name = request.form.get("new_subject_name", "").strip()
@@ -1589,24 +1593,14 @@ def teachers_view():
             existing_secretary = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='secretary'").fetchone()["n"]
         if role in ("director", "secretary"):
             name = " ".join(part for part in (first_name, last_name) if part).strip()
-        if role not in ("guide", "teacher", "director", "secretary"):
-            flash("Selecciona un tipo de docente válido.", "error")
-        elif non_admin_guides == 0 and role not in ("guide", "director", "secretary"):
-            flash("El primer docente que registres debe ser docente guía. Después podrás crear docentes de materia.", "error")
-        elif non_admin_guides > 0 and non_admin_subject_teachers == 0 and role not in ("teacher", "director", "secretary"):
-            flash("Después del docente guía debes registrar un docente de materia para completar esta etapa.", "error")
-        elif role in ("director", "secretary") and (not first_name or not last_name or not hire_date or not password):
+        if role != "guide":
+            flash("Solo se permiten cuentas de administrador/director y docentes guía.", "error")
+        elif is_director_account and (not first_name or not last_name or not hire_date or not password):
             flash("Nombres, apellidos, fecha de ingreso y contraseña son obligatorios.", "error")
-        elif role in ("guide", "teacher") and (not name or not password):
+        elif not is_director_account and (not name or not password):
             flash("Nombre y contraseña son obligatorios.", "error")
-        elif role == "guide" and (not guide_grade or not guide_section or not guide_year):
-            flash("Para el docente guía indica grado, sección y año de referencia.", "error")
-        elif role == "director" and existing_director:
+        elif is_director_account and existing_director:
             flash("Solo puede existir un Director académico.", "error")
-        elif role == "secretary" and existing_secretary:
-            flash("Solo puede existir una cuenta de Secretaría.", "error")
-        elif role == "teacher" and not name:
-            flash("El nombre del docente es obligatorio.", "error")
         else:
             with db() as connection:
                 try:
@@ -1628,8 +1622,8 @@ def teachers_view():
                     if role == "teacher" and new_subject_name:
                         subject_cursor = connection.execute("INSERT INTO subjects(name,grade,year,created_by) VALUES(?,?,?,?)", (new_subject_name, teacher_grade, teacher_year, session.get("teacher_id")))
                         subject_ids.append(subject_cursor.lastrowid)
-                    cursor = connection.execute("INSERT INTO teachers(name,email,password,grade,section,academic_year,first_name,last_name,hire_date,employment_status,status_start_date,status_end_date,reentry_date,account_type,teaching_level,teaching_functions) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                                (name, email, generate_password_hash(password), teacher_grade, teacher_section, teacher_year, first_name, last_name, hire_date, employment_status, status_start_date, status_end_date, reentry_date, account_type, teaching_level, teaching_functions))
+                    cursor = connection.execute("INSERT INTO teachers(name,email,password,grade,section,academic_year,first_name,last_name,hire_date,employment_status,status_start_date,status_end_date,reentry_date,account_type,teaching_level,teaching_functions,is_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                                (name or "Director", email, generate_password_hash(password), teacher_grade, teacher_section, teacher_year, first_name, last_name, hire_date, employment_status, status_start_date, status_end_date, reentry_date, account_type, teaching_level, teaching_functions, 1 if is_director_account else 0))
                     new_teacher_id = cursor.lastrowid
                     connection.execute("INSERT INTO teacher_roles(teacher_id,role) VALUES(?,?)", (new_teacher_id, role))
                     connection.execute("INSERT OR IGNORE INTO teacher_capabilities(teacher_id,capability) VALUES(?,?)", (new_teacher_id, role))
