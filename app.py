@@ -1,10 +1,11 @@
 import io
+import csv
 import os
 import shutil
 import sqlite3
 from datetime import datetime
 from functools import wraps
-from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, flash, make_response, redirect, render_template, request, send_file, session, url_for
 from openpyxl import Workbook, load_workbook
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -1813,7 +1814,7 @@ def students():
                 FROM classes c LEFT JOIN subjects s ON s.id=c.subject_id
                 LEFT JOIN teachers t ON t.id=c.teacher_id
                 WHERE c.teacher_id=? ORDER BY c.name""", (teacher_id,)).fetchall()
-    return render_template("students.html", students=rows, groups=group_rows, classes=class_rows, search=search, subject_search=subject_search, record_filter=record_filter, status_filter=status_filter, filter_group=filter_group, is_guide=is_guide, is_admin=is_admin, is_secretary=is_secretary, can_withdraw=can_withdraw, read_only=is_admin or is_secretary)
+    return render_template("students.html", students=rows, groups=group_rows, classes=class_rows, search=search, subject_search=subject_search, record_filter=record_filter, status_filter=status_filter, filter_group=filter_group, is_guide=is_guide, is_admin=is_admin, is_director=teacher_is_director(teacher_id), is_secretary=is_secretary, can_withdraw=can_withdraw, read_only=is_admin or is_secretary)
 
 
 @app.post("/students/<int:student_id>/delete")
@@ -1893,6 +1894,61 @@ def delete_student(student_id):
         )
     flash("Baja registrada. La matrícula y todos los registros de notas se conservaron.", "success")
     return redirect(url_for("students"))
+
+
+@app.post("/students/<int:student_id>/restore")
+@teacher_required
+def restore_student(student_id):
+    teacher_id = session.get("teacher_id")
+    if not (teacher_is_admin(teacher_id) or teacher_is_director(teacher_id) or (is_guide_teacher(teacher_id) and teacher_can_access_student(student_id, teacher_id))):
+        flash("No tienes permiso para restablecer esta matrícula.", "error")
+        return redirect(url_for("students", status="withdrawn"))
+    with db() as connection:
+        connection.execute("UPDATE students SET enrollment_status='active',withdrawal_date='',withdrawal_note='' WHERE id=? AND enrollment_status='withdrawn'", (student_id,))
+    flash("Estudiante restablecido como matrícula activa.", "success")
+    return redirect(url_for("students", status="withdrawn"))
+
+
+@app.get("/students/<int:student_id>/export-record")
+@teacher_required
+def export_student_record(student_id):
+    teacher_id = session.get("teacher_id")
+    if not (teacher_is_admin(teacher_id) or teacher_is_director(teacher_id) or teacher_is_secretary(teacher_id) or (is_guide_teacher(teacher_id) and teacher_can_access_student(student_id, teacher_id))):
+        return "No autorizado", 403
+    with db() as connection:
+        student = connection.execute("SELECT * FROM students WHERE id=?", (student_id,)).fetchone()
+        grades = connection.execute("SELECT pg.*,s.name AS subject_name FROM partial_grades pg LEFT JOIN subjects s ON s.id=pg.subject_id WHERE pg.student_id=? ORDER BY s.name,pg.partial", (student_id,)).fetchall()
+        conduct = connection.execute("SELECT * FROM conduct_evaluations WHERE student_id=? ORDER BY partial", (student_id,)).fetchall()
+    if not student:
+        return "Estudiante no encontrado", 404
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Tipo", "Asignatura", "Parcial", "Cuantitativa", "Cualitativa", "Detalle"])
+    for row in grades:
+        writer.writerow(["Nota", row["subject_name"] or "", partial_name(row["partial"]), grade_value(row), "", row["comments"] or ""])
+    for row in conduct:
+        writer.writerow(["Conducta", "Conducta", partial_name(row["partial"]), row["quantitative"] or "", row["qualitative"] or "", f"Criterios: {row['criteria'] or ''}; Incidentes: {row['incidents'] or ''}; Observaciones: {row['observations'] or ''}"])
+    response = make_response(output.getvalue())
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    response.headers["Content-Disposition"] = f"attachment; filename=expediente-{student['code']}.csv"
+    return response
+
+
+@app.post("/students/<int:student_id>/permanent-delete")
+@teacher_required
+def permanently_delete_student(student_id):
+    teacher_id = session.get("teacher_id")
+    if not (teacher_is_admin(teacher_id) or teacher_is_director(teacher_id)):
+        flash("Solo Admin o Dirección puede eliminar definitivamente un expediente.", "error")
+        return redirect(url_for("students", status="withdrawn"))
+    with db() as connection:
+        student = connection.execute("SELECT id,enrollment_status FROM students WHERE id=?", (student_id,)).fetchone()
+        if not student or student["enrollment_status"] != "withdrawn":
+            flash("Solo se pueden eliminar definitivamente estudiantes dados de baja.", "error")
+            return redirect(url_for("students", status="withdrawn"))
+        connection.execute("DELETE FROM students WHERE id=?", (student_id,))
+    flash("Expediente eliminado definitivamente.", "success")
+    return redirect(url_for("students", status="withdrawn"))
 
 
 @app.post("/students/<int:student_id>/group")

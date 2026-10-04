@@ -49,6 +49,7 @@
     <footer class="student-actions">
       <a class="button" href="{{ url_for('grades',student_id=s.id) }}">{% if is_guide or is_admin or is_secretary %}Ver notas{% else %}Registrar notas{% endif %}</a>
       {% if is_guide or is_admin or is_secretary %}<a class="button secondary" href="{{ url_for('teacher_pdf',student_id=s.id) }}">Imprimir boleta PDF</a>{% endif %}
+      {% if s.enrollment_status == 'withdrawn' %}<a class="button secondary" href="{{ url_for('export_student_record',student_id=s.id) }}">Exportar expediente</a>{% if is_guide or is_admin %}<form method="post" action="{{ url_for('restore_student',student_id=s.id) }}"><button class="button" type="submit">Restablecer matrícula</button></form>{% endif %}{% if is_admin or (not is_guide and not is_secretary) %}<form method="post" action="{{ url_for('permanently_delete_student',student_id=s.id) }}" onsubmit="return confirm('¿Eliminar definitivamente este expediente? Esta acción no se puede deshacer. Exporta los registros antes de continuar.')"><button class="danger" type="submit">Eliminar definitivamente</button></form>{% endif %}{% endif %}
       {% if can_withdraw and s.enrollment_status != 'withdrawn' %}
       <details class="withdraw-action">
         <summary>Dar de baja</summary>
