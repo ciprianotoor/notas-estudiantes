@@ -1979,6 +1979,12 @@ def academic_structure():
     return render_template('academic_structure.html', years=years, grades=grades, guides=guides, sections=sections)
 
 
+@app.get('/academic-structure/mined-reference')
+@admin_required
+def mined_reference():
+    return render_template('mined_reference.html')
+
+
 @app.route('/subject-catalog', methods=['GET', 'POST'])
 @admin_required
 def subject_catalog():
