@@ -38,8 +38,6 @@ document.querySelectorAll('input[name="conduct_score"]').forEach(function(score)
 document.querySelectorAll('textarea[name="conduct_criteria"]').forEach(function(field) {
   field.placeholder = 'Relaciones interpersonales; responsabilidad individual y compartida; participación en actividades extracurriculares; solidaridad y colaboración; asistencia y puntualidad; orden y aseo. Registra evidencias observables del corte.';
 });
-if (document.querySelector('.conduct-subject-card')) {
-  document.querySelectorAll('.conduct-card').forEach(function(card) { card.style.display = 'none'; });
-}
+document.querySelectorAll('.conduct-card').forEach(function(card) { card.remove(); });
 </script>
 {% endblock %}
