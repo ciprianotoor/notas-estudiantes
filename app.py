@@ -2772,16 +2772,19 @@ def import_xlsx():
 
 
 @app.get("/statistics")
-@guide_required
+@teacher_required
 def statistics():
     teacher_id = session.get("teacher_id")
     with db() as connection:
-        students = connection.execute("""
-            SELECT s.* FROM students s
-            LEFT JOIN groups g ON g.id=s.group_id
-            WHERE g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?)
-            ORDER BY s.name
-        """, (teacher_id, teacher_id)).fetchall()
+        if teacher_is_admin(teacher_id) or teacher_is_secretary(teacher_id):
+            students = connection.execute("SELECT s.* FROM students s ORDER BY s.name").fetchall()
+        else:
+            students = connection.execute("""
+                SELECT s.* FROM students s
+                LEFT JOIN groups g ON g.id=s.group_id
+                WHERE g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?)
+                ORDER BY s.name
+            """, (teacher_id, teacher_id)).fetchall()
         subject_rows = connection.execute("SELECT id,name FROM subjects").fetchall()
     subject_names = {row["id"]: row["name"] for row in subject_rows}
     summaries = []
