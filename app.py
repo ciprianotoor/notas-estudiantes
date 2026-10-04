@@ -291,6 +291,119 @@ def init_db():
         connection.execute("UPDATE groups SET teacher_id=? WHERE teacher_id IS NULL", (teacher_id,))
         connection.execute("UPDATE students SET teacher_id=? WHERE teacher_id IS NULL", (teacher_id,))
 
+        # Academic architecture v2.  The legacy tables above remain temporarily
+        # for route compatibility while the UI is migrated to this normalized model.
+        connection.executescript("""
+        CREATE TABLE IF NOT EXISTS academic_years (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            year INTEGER NOT NULL UNIQUE,
+            start_date TEXT DEFAULT '', end_date TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS grades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, code TEXT NOT NULL UNIQUE, level TEXT DEFAULT '',
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS sections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            academic_year_id INTEGER NOT NULL, grade_id INTEGER NOT NULL,
+            name TEXT NOT NULL, shift TEXT DEFAULT '', teacher_guide_id INTEGER,
+            active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(academic_year_id, grade_id, name),
+            FOREIGN KEY(academic_year_id) REFERENCES academic_years(id),
+            FOREIGN KEY(grade_id) REFERENCES grades(id),
+            FOREIGN KEY(teacher_guide_id) REFERENCES teachers(id)
+        );
+        CREATE TABLE IF NOT EXISTS enrollments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL, academic_year_id INTEGER NOT NULL,
+            section_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'active',
+            enrollment_date TEXT DEFAULT '', withdrawal_date TEXT DEFAULT '',
+            UNIQUE(student_id, academic_year_id),
+            FOREIGN KEY(student_id) REFERENCES students(id),
+            FOREIGN KEY(academic_year_id) REFERENCES academic_years(id),
+            FOREIGN KEY(section_id) REFERENCES sections(id)
+        );
+        CREATE TABLE IF NOT EXISTS subject_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, area TEXT DEFAULT '',
+            description TEXT DEFAULT '', active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS academic_offerings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            academic_year_id INTEGER NOT NULL, grade_id INTEGER NOT NULL,
+            subject_id INTEGER NOT NULL, modality TEXT DEFAULT '',
+            display_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(academic_year_id, grade_id, subject_id, modality),
+            FOREIGN KEY(academic_year_id) REFERENCES academic_years(id),
+            FOREIGN KEY(grade_id) REFERENCES grades(id),
+            FOREIGN KEY(subject_id) REFERENCES subject_catalog(id)
+        );
+        CREATE TABLE IF NOT EXISTS section_subjects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            section_id INTEGER NOT NULL, academic_offering_id INTEGER NOT NULL,
+            display_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(section_id, academic_offering_id),
+            FOREIGN KEY(section_id) REFERENCES sections(id),
+            FOREIGN KEY(academic_offering_id) REFERENCES academic_offerings(id)
+        );
+        CREATE TABLE IF NOT EXISTS evaluation_periods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            academic_year_id INTEGER NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'period', display_order INTEGER NOT NULL DEFAULT 0,
+            active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(academic_year_id, code),
+            FOREIGN KEY(academic_year_id) REFERENCES academic_years(id)
+        );
+        CREATE TABLE IF NOT EXISTS assessments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            enrollment_id INTEGER NOT NULL, section_subject_id INTEGER NOT NULL,
+            evaluation_period_id INTEGER NOT NULL, numeric_value REAL,
+            qualitative_code TEXT DEFAULT '', observations TEXT DEFAULT '',
+            created_by INTEGER, updated_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(enrollment_id, section_subject_id, evaluation_period_id),
+            CHECK(numeric_value IS NULL OR (numeric_value >= 0 AND numeric_value <= 100)),
+            FOREIGN KEY(enrollment_id) REFERENCES enrollments(id),
+            FOREIGN KEY(section_subject_id) REFERENCES section_subjects(id),
+            FOREIGN KEY(evaluation_period_id) REFERENCES evaluation_periods(id)
+        );
+        CREATE TABLE IF NOT EXISTS final_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, enrollment_id INTEGER NOT NULL,
+            section_subject_id INTEGER NOT NULL, numeric_value REAL,
+            qualitative_code TEXT DEFAULT '', status TEXT DEFAULT '', observations TEXT DEFAULT '',
+            UNIQUE(enrollment_id, section_subject_id),
+            FOREIGN KEY(enrollment_id) REFERENCES enrollments(id),
+            FOREIGN KEY(section_subject_id) REFERENCES section_subjects(id)
+        );
+        CREATE TABLE IF NOT EXISTS grade_change_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, assessment_id INTEGER NOT NULL,
+            user_id INTEGER, previous_numeric REAL, new_numeric REAL,
+            previous_qualitative TEXT DEFAULT '', new_qualitative TEXT DEFAULT '',
+            reason TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(assessment_id) REFERENCES assessments(id)
+        );
+        CREATE TABLE IF NOT EXISTS reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, enrollment_id INTEGER NOT NULL,
+            report_type TEXT NOT NULL, academic_year_id INTEGER NOT NULL,
+            generated_at TEXT DEFAULT CURRENT_TIMESTAMP, generated_by INTEGER, version INTEGER NOT NULL DEFAULT 1,
+            FOREIGN KEY(enrollment_id) REFERENCES enrollments(id),
+            FOREIGN KEY(academic_year_id) REFERENCES academic_years(id)
+        );
+        CREATE TABLE IF NOT EXISTS qualitative_scales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, academic_year_id INTEGER,
+            code TEXT NOT NULL, name TEXT NOT NULL, description TEXT DEFAULT '',
+            active INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(academic_year_id, code),
+            FOREIGN KEY(academic_year_id) REFERENCES academic_years(id)
+        );
+        """)
+
 
 def settings():
     with db() as connection:
@@ -1823,6 +1936,33 @@ def teacher_selected_pdf():
         flash("Selecciona al menos un estudiante.", "error")
         return redirect(url_for("print_reports"))
     return make_pdf(student_ids, requested_partials(request.form))
+
+
+@app.route('/academic-structure', methods=['GET', 'POST'])
+@admin_required
+def academic_structure():
+    if request.method == 'POST':
+        kind = request.form.get('kind')
+        try:
+            with db() as connection:
+                if kind == 'year':
+                    connection.execute('INSERT INTO academic_years(year,start_date,end_date,status) VALUES(?,?,?,?)', (int(request.form['year']), request.form.get('start_date',''), request.form.get('end_date',''), request.form.get('status','open')))
+                elif kind == 'grade':
+                    connection.execute('INSERT INTO grades(name,code,level) VALUES(?,?,?)', (request.form['name'].strip(), request.form['code'].strip(), request.form.get('level','').strip()))
+                elif kind == 'section':
+                    connection.execute('INSERT INTO sections(academic_year_id,grade_id,name,shift,teacher_guide_id) VALUES(?,?,?,?,?)', (request.form['academic_year_id'], request.form['grade_id'], request.form['name'].strip(), request.form.get('shift','').strip(), request.form.get('teacher_guide_id') or None))
+                else:
+                    raise ValueError('Tipo inválido')
+            flash('Registro académico creado.', 'success')
+        except (sqlite3.IntegrityError, ValueError) as error:
+            flash(f'No se pudo guardar: {error}', 'error')
+        return redirect(url_for('academic_structure'))
+    with db() as connection:
+        years = connection.execute('SELECT * FROM academic_years ORDER BY year DESC').fetchall()
+        grades = connection.execute('SELECT * FROM grades WHERE active=1 ORDER BY name').fetchall()
+        guides = connection.execute('SELECT id,name FROM teachers WHERE is_admin=0 ORDER BY name').fetchall()
+        sections = connection.execute('SELECT s.*, ay.year, g.name AS grade_name, t.name AS guide_name FROM sections s JOIN academic_years ay ON ay.id=s.academic_year_id JOIN grades g ON g.id=s.grade_id LEFT JOIN teachers t ON t.id=s.teacher_guide_id WHERE s.active=1 ORDER BY ay.year DESC, g.name, s.name').fetchall()
+    return render_template('academic_structure.html', years=years, grades=grades, guides=guides, sections=sections)
 
 
 def make_pdf(student_ids, selected_partials):
