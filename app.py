@@ -1955,9 +1955,12 @@ def academic_structure():
         try:
             with db() as connection:
                 if kind == 'structure':
-                    year_cursor = connection.execute('INSERT INTO academic_years(year,start_date,end_date,status) VALUES(?,?,?,?)', (int(request.form['year']), request.form.get('start_date',''), request.form.get('end_date',''), request.form.get('status','open')))
-                    grade_cursor = connection.execute('INSERT INTO grades(name,code,level) VALUES(?,?,?)', (request.form['grade_name'].strip(), request.form['grade_code'].strip(), request.form.get('level','').strip()))
-                    connection.execute('INSERT INTO sections(academic_year_id,grade_id,name,shift,teacher_guide_id) VALUES(?,?,?,?,?)', (year_cursor.lastrowid, grade_cursor.lastrowid, request.form['section_name'].strip(), request.form.get('shift','').strip(), request.form.get('teacher_guide_id') or None))
+                    year_value = int(request.form['year'])
+                    connection.execute('INSERT OR IGNORE INTO academic_years(year,start_date,end_date,status) VALUES(?,?,?,?)', (year_value, request.form.get('start_date',''), request.form.get('end_date',''), request.form.get('status','open')))
+                    year_id = connection.execute('SELECT id FROM academic_years WHERE year=?', (year_value,)).fetchone()['id']
+                    connection.execute('INSERT OR IGNORE INTO grades(name,code,level) VALUES(?,?,?)', (request.form['grade_name'].strip(), request.form['grade_code'].strip(), request.form.get('level','').strip()))
+                    grade_id = connection.execute('SELECT id FROM grades WHERE code=?', (request.form['grade_code'].strip(),)).fetchone()['id']
+                    connection.execute('INSERT INTO sections(academic_year_id,grade_id,name,shift,teacher_guide_id) VALUES(?,?,?,?,?)', (year_id, grade_id, request.form['section_name'].strip(), request.form.get('shift','').strip(), request.form.get('teacher_guide_id') or None))
                 elif kind == 'year':
                     connection.execute('INSERT INTO academic_years(year,start_date,end_date,status) VALUES(?,?,?,?)', (int(request.form['year']), request.form.get('start_date',''), request.form.get('end_date',''), request.form.get('status','open')))
                 elif kind == 'grade':
@@ -1968,7 +1971,8 @@ def academic_structure():
                     raise ValueError('Tipo inválido')
             flash('Registro académico creado.', 'success')
         except (sqlite3.IntegrityError, ValueError) as error:
-            flash(f'No se pudo guardar: {error}', 'error')
+            message = 'Esa sección ya existe para el año y grado seleccionados.' if isinstance(error, sqlite3.IntegrityError) else str(error)
+            flash(f'No se pudo guardar: {message}', 'error')
         return redirect(url_for('academic_structure'))
     with db() as connection:
         years = connection.execute('SELECT * FROM academic_years ORDER BY year DESC').fetchall()
