@@ -863,7 +863,7 @@ def delete_group(group_id):
 
 
 @app.route("/subjects", methods=["GET", "POST"])
-@guide_required
+@admin_required
 @workflow_required(1)
 def subjects_view():
     if request.method == "POST":
@@ -961,7 +961,7 @@ def delete_class(class_id):
 
 
 @app.route("/assignments", methods=["GET", "POST"])
-@guide_required
+@admin_required
 def assignments_view():
     if request.method == "POST":
         teacher_id = request.form.get("teacher_id", type=int)
