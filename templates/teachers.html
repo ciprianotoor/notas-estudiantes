@@ -1,19 +1,131 @@
 {% extends 'base.html' %}
-{% block title %}Docentes y materias{% endblock %}
+{% block title %}Docentes y cuentas{% endblock %}
 {% block content %}
-<div class="page-heading"><p class="eyebrow">PERSONAL ACADÉMICO</p><h1>Docentes y cuentas</h1><p class="muted">Primero el docente guía crea los grupos. Después el Director@ asigna materias y autoriza los grupos donde puede trabajar cada docente de materia.</p></div>
-<div class="card teacher-creation"><h2>Crear cuenta docente</h2><form method="post" class="teacher-form" id="teacher-form"><div class="form-section"><h3>1. Datos de acceso</h3><div class="grid"><label>Nombre completo<input name="name" required></label><label>Email<input name="email" type="email"></label><label>Contraseña<input name="password" type="password" required></label><label>Tipo de docente<select name="role" id="role" required><option value="guide">Docente guía</option><option value="teacher">Docente de materia</option></select></label></div></div><div class="form-section guide-only"><h3>2. Datos del docente guía</h3><div class="grid"><label>Grado / curso<input name="guide_grade" placeholder="Ej. 7mo"></label><label>Sección<input name="guide_section" placeholder="Ej. A"></label><label>Año académico<input name="guide_year" type="number" min="2000"></label></div></div><div class="form-section subject-only"><h3>2. Materias y grupos autorizados</h3><p class="muted">El Director@ asigna la materia y selecciona grupos existentes. Esto autoriza el grado y sección; todavía no crea la clase.</p><fieldset><legend>Grupos disponibles creados por el docente guía</legend><div class="check-list">{% for group in groups %}<label><input type="checkbox" name="group_id" value="{{ group.id }}"><span><strong>{{ group.name }}</strong><small>{{ group.grade or group.name }}{% if group.section %} · Sección {{ group.section }}{% endif %}{% if group.academic_year %} · {{ group.academic_year }}{% endif %}</small></span></label>{% else %}<small class="muted">Primero crea grupos desde “Grupos y matrículas”.</small>{% endfor %}</div></fieldset><label>Crear nueva materia<input name="new_subject_name" placeholder="Ej. Matemática"></label><fieldset><legend>Materias existentes</legend><div class="check-list">{% for subject in subjects %}<label><input type="checkbox" name="subject_id" value="{{ subject.id }}"><span><strong>{{ subject.name }}</strong>{% if subject.grade %}<small>{{ subject.grade }}{% if subject.year %} · {{ subject.year }}{% endif %}</small>{% endif %}</span></label>{% else %}<small class="muted">Todavía no hay materias existentes.</small>{% endfor %}</div></fieldset></div><div class="form-actions"><button>Crear cuenta docente</button></div></form></div>
-<div class="card"><div class="section-title"><h2>Docentes registrados</h2><span class="muted">{{ teachers|length }} cuenta(s)</span></div><div class="teacher-list">{% for t in teachers %}<div class="teacher-item"><span class="teacher-avatar">{{ t.name[:1]|upper }}</span><span class="teacher-info"><strong>{{ t.name }}</strong><small>{{ t.email or 'Sin email' }} · {% if t.role == 'guide' %}Docente guía{% else %}Docente de materia{% endif %}</small></span>{% if t.grade or t.section or t.academic_year %}<span class="teacher-context">{{ t.grade or '-' }}{% if t.section %} · {{ t.section }}{% endif %}{% if t.academic_year %} · {{ t.academic_year }}{% endif %}</span>{% endif %}<a class="button small-button" href="/teachers/{{ t.id }}/edit">Editar</a>{% if not t.is_admin %}<form method="post" action="/teachers/{{ t.id }}/delete" class="inline-form" onsubmit="return confirm('¿Eliminar docente?')"><button class="danger small-button">Eliminar</button></form>{% else %}<span class="muted">Protegida</span>{% endif %}</div>{% else %}<p class="muted">No hay docentes registrados.</p>{% endfor %}</div></div>
-<script>const role=document.getElementById('role');const subjects=document.querySelectorAll('.subject-only');const guides=document.querySelectorAll('.guide-only');const accessGrid=document.querySelector('.teacher-creation .form-section .grid');const nameField=accessGrid?.querySelector('input[name="name"]')?.closest('label');const emailField=accessGrid?.querySelector('input[name="email"]')?.closest('label');if(accessGrid&&!accessGrid.querySelector('.admin-data')){const box=document.createElement('div');box.className='admin-data';box.innerHTML='<label>Nombres<input name="first_name"></label><label>Apellidos<input name="last_name"></label><label>Fecha de ingreso laboral<input name="hire_date" type="date"></label>';accessGrid.insertBefore(box,accessGrid.firstChild);}function syncRole(){const isTeacher=role.value==='teacher';const isGuide=role.value==='guide';const isAdminAccount=role.value==='director'||role.value==='secretary';subjects.forEach(b=>{b.hidden=!isTeacher;b.querySelectorAll('input,select').forEach(i=>{i.disabled=!isTeacher;});});guides.forEach(b=>{b.hidden=!isGuide;b.querySelectorAll('input,select').forEach(i=>{i.disabled=!isGuide;i.required=isGuide;});});const box=accessGrid?.querySelector('.admin-data');if(box){box.hidden=!isAdminAccount;box.querySelectorAll('input').forEach(i=>{i.disabled=!isAdminAccount;i.required=isAdminAccount;});}if(nameField){nameField.hidden=isAdminAccount;nameField.querySelector('input').disabled=isAdminAccount;}if(emailField){emailField.hidden=isAdminAccount;emailField.querySelector('input').disabled=isAdminAccount;}}role.addEventListener('change',syncRole);syncRole();</script>
-<style>.page-heading{margin-bottom:1rem}.teacher-creation{border-top:4px solid #2563eb}.form-section{padding:1rem 0;border-bottom:1px solid #eaecf0}.form-section h3{margin:.1rem 0 .35rem}.check-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.55rem}.check-list label{display:flex;gap:.5rem;align-items:flex-start;background:#f8fafc;padding:.7rem;border:1px solid #e4e7ec;border-radius:8px}.check-list label small{display:block;color:#667085}.check-list input{width:auto;margin:.2rem .2rem 0 0}.form-actions{display:flex;justify-content:flex-end;padding-top:1rem}.form-actions button{width:auto;min-width:220px}.teacher-list{display:grid;gap:.55rem;margin-top:1rem}.teacher-item{display:flex;align-items:center;gap:.7rem;padding:.75rem;border:1px solid #eaecf0;border-radius:10px;background:#f8fafc}.teacher-avatar{display:grid;place-items:center;width:2.2rem;height:2.2rem;flex:0 0 2.2rem;border-radius:50%;background:#dbeafe;color:#1d4ed8;font-weight:800}.teacher-info{min-width:0;flex:1}.teacher-info strong,.teacher-info small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.teacher-info small{color:#667085}.teacher-context{color:#475467;font-size:.8rem}.small-button{width:auto;margin:0;padding:.45rem .6rem;font-size:.82rem}.inline-form{display:inline}.inline-form button{width:auto;margin:0}@media(max-width:720px){.form-actions button{width:100%}.teacher-item{flex-wrap:wrap}.teacher-context{width:100%;padding-left:2.9rem}}</style>
-<script>const legacyRole=document.querySelector('select[name="role"]');const access=legacyRole?.closest('.grid');if(legacyRole&&access&&!access.querySelector('.account-type')){legacyRole.closest('label').hidden=true;const typeLabel=document.createElement('label');typeLabel.className='account-type';typeLabel.innerHTML='<span>Tipo de cuenta</span><select name="account_type"><option value="">Seleccione tipo de cuenta</option><option>Docente</option><option>Director</option><option>Secretaría</option></select>';access.insertBefore(typeLabel,access.firstChild);const levelLabel=document.createElement('label');levelLabel.className='teaching-options';levelLabel.innerHTML='<span>Nivel docente</span><select name="teaching_level"><option value="">Selecciona nivel</option><option>Primaria</option><option>Secundaria</option><option>Ambos</option></select>';access.insertBefore(levelLabel,legacyRole.closest('label').nextSibling);const functionLabel=document.createElement('label');functionLabel.className='teaching-options';functionLabel.innerHTML='<span>Funciones docentes</span><select name="teaching_functions"><option value="">Selecciona función</option><option value="guia">Solo guía</option><option value="materia">Solo materia</option><option value="guia,materia">Guía y materia</option></select>';access.insertBefore(functionLabel,levelLabel.nextSibling);const type=typeLabel.querySelector('select'),level=levelLabel.querySelector('select'),func=functionLabel.querySelector('select');function syncAccount(){const docente=type.value==='Docente';const selected=type.value!=='';levelLabel.hidden=!docente;functionLabel.hidden=!docente;level.disabled=!docente;func.disabled=!docente;if(!selected){legacyRole.value='';}else if(!docente){legacyRole.value=type.value==='Director'?'director':'secretary';}else{legacyRole.value=func.value.includes('materia')?'teacher':'guide';if(level.value==='Primaria'){func.value='guia';func.disabled=true;}else{func.disabled=false;}}}type.addEventListener('change',syncAccount);level.addEventListener('change',syncAccount);func.addEventListener('change',syncAccount);syncAccount();}</script>
-<script>const accountType=document.querySelector('select[name="account_type"]');if(accountType){const guideSection=document.querySelector('.guide-only');const subjectSection=document.querySelector('.subject-only');const access=document.querySelector('.teacher-creation .form-section .grid');const cargo=document.createElement('div');cargo.className='admin-cargo';cargo.textContent='Cargo: Administración';cargo.style.cssText='padding:.75rem 1rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;color:#1d4ed8;font-weight:700;margin-top:.5rem';access?.appendChild(cargo);function syncAdministrative(){const admin=accountType.value==='Director'||accountType.value==='Secretaría';if(guideSection)guideSection.hidden=admin;if(subjectSection)subjectSection.hidden=admin;if(cargo)cargo.hidden=!admin;}accountType.addEventListener('change',syncAdministrative);syncAdministrative();}</script>
-<script>const finalAccount=document.querySelector('select[name="account_type"]');if(finalAccount){const formGrid=document.querySelector('.teacher-creation .form-section .grid');const legacyName=formGrid?.querySelector('input[name="name"]')?.closest('label');const legacyEmail=formGrid?.querySelector('input[name="email"]')?.closest('label');const adminData=formGrid?.querySelector('.admin-data');function syncFinalAccount(){const admin=finalAccount.value==='Director'||finalAccount.value==='Secretaría';if(legacyName){legacyName.hidden=admin;legacyName.querySelector('input').disabled=admin;}if(legacyEmail){legacyEmail.hidden=admin;legacyEmail.querySelector('input').disabled=admin;}if(adminData){adminData.hidden=!admin;adminData.querySelectorAll('input').forEach(i=>{i.disabled=!admin;i.required=admin;});}}finalAccount.addEventListener('change',syncFinalAccount);syncFinalAccount();}</script>
-<script>const cleanAccount=document.querySelector('select[name="account_type"]');if(cleanAccount){const grid=document.querySelector('.teacher-creation .form-section .grid');const oldName=grid?.querySelector('input[name="name"]')?.closest('label');const oldEmail=grid?.querySelector('input[name="email"]')?.closest('label');const adminBox=grid?.querySelector('.admin-data');function cleanAccountFields(){const isAdmin=cleanAccount.value==='Director'||cleanAccount.value==='Secretaría';if(oldName){oldName.style.display=isAdmin?'none':'';oldName.querySelector('input').disabled=isAdmin;}if(oldEmail){oldEmail.style.display=isAdmin?'none':'';oldEmail.querySelector('input').disabled=isAdmin;}if(adminBox){adminBox.style.display=isAdmin?'grid':'none';adminBox.querySelectorAll('input').forEach(i=>{i.disabled=!isAdmin;i.required=isAdmin;});}document.querySelectorAll('.guide-only,.subject-only,.teaching-options').forEach(el=>{if(isAdmin)el.style.display='none';});}cleanAccount.addEventListener('change',cleanAccountFields);cleanAccountFields();}</script>
-<script>const startType=document.querySelector('select[name="account_type"]');if(startType){const grid=startType.closest('.grid');const labels=[...grid.querySelectorAll(':scope > label')];function cleanStart(){const selected=startType.value!=='';labels.forEach(label=>{const input=label.querySelector('input');const isType=label.classList.contains('account-type');const isRole=label.querySelector('select[name="role"]');if(!isType&&!isRole){label.style.display=selected?'':'none';if(input)input.disabled=!selected;}});}startType.addEventListener('change',cleanStart);cleanStart();}</script>
-<script>document.querySelector('.teacher-creation h2')?.replaceChildren('Crear cuenta');document.querySelector('.teacher-creation .form-actions button')?.replaceChildren('Crear cuenta');</script>
-<script>(function(){const type=document.querySelector('select[name="account_type"]');const grid=type?.closest('.grid');if(!type||!grid)return;const all=[...grid.querySelectorAll(':scope > label')];const account=type.closest('label');const password=grid.querySelector('input[name="password"]')?.closest('label');const name=grid.querySelector('input[name="name"]')?.closest('label');const email=grid.querySelector('input[name="email"]')?.closest('label');const admin=grid.querySelector('.admin-data');const level=grid.querySelector('select[name="teaching_level"]')?.closest('label');const funcs=grid.querySelector('select[name="teaching_functions"]')?.closest('label');function show(el,on){if(el){el.style.display=on?'block':'none';el.querySelectorAll('input,select').forEach(x=>x.disabled=!on);}}function render(){const v=type.value;const isDoc=v==='Docente';const isAdmin=v==='Director'||v==='Secretaría';all.forEach(x=>{if(x!==account&&x!==password&&x!==name&&x!==email&&x!==admin&&x!==level&&x!==funcs&&!x.classList.contains('teaching-options'))x.style.display='none';});show(account,true);show(password,!!v);show(admin,isAdmin);show(name,isDoc);show(email,isDoc);show(level,isDoc);show(funcs,isDoc);document.querySelectorAll('.guide-only,.subject-only').forEach(x=>x.style.display=isDoc?'':'none');}type.addEventListener('change',render);render();})();</script>
-<script>const accountForValidation=document.querySelector('select[name="account_type"]');if(accountForValidation){function disableInactiveFields(){const admin=accountForValidation.value==='Director'||accountForValidation.value==='Secretaría';const docente=accountForValidation.value==='Docente';document.querySelectorAll('.guide-only input,.subject-only input,.subject-only select').forEach(input=>{input.disabled=admin||!docente;input.required=false;});document.querySelectorAll('.teaching-options input,.teaching-options select').forEach(input=>{input.disabled=!docente;input.required=false;});}accountForValidation.addEventListener('change',disableInactiveFields);disableInactiveFields();}</script>
-<script>const accountForm=document.getElementById('teacher-form');const accountChoice=document.querySelector('select[name="account_type"]');if(accountForm&&accountChoice){accountForm.addEventListener('submit',function(){const admin=accountChoice.value==='Director'||accountChoice.value==='Secretaría';if(admin){accountForm.querySelectorAll('input,select,textarea').forEach(field=>{if(!['account_type','first_name','last_name','hire_date','password'].includes(field.name)){field.required=false;field.disabled=true;}});accountForm.querySelector('select[name="role"]').disabled=false;accountForm.querySelector('select[name="role"]').value=accountChoice.value==='Director'?'director':'secretary';}});}</script>
-<script>document.getElementById('teacher-form')?.setAttribute('novalidate','novalidate');</script>
+<div class="page-heading">
+  <p class="eyebrow">PERSONAL ACADÉMICO</p>
+  <h1>Docentes y cuentas</h1>
+  <p class="muted">Las cuentas nuevas son de docentes guía. Asigna las materias desde el catálogo activo; para Primaria se seleccionan todas inicialmente y puedes quitar o agregar materias.</p>
+  <div class="actions"><a class="button secondary" href="{{ url_for('assignments_view') }}">Asignar materias a docentes guía</a></div>
+</div>
+<div class="card teacher-creation">
+  <h2>Crear cuenta de docente guía</h2>
+  <form method="post" class="teacher-form">
+    <input type="hidden" name="role" value="guide">
+    <input type="hidden" name="account_type" value="Docente">
+    <div class="form-section">
+      <h3>Datos de acceso</h3>
+      <div class="grid">
+        <label>Nombre completo<input name="name" required></label>
+        <label>Email (opcional)<input name="email" type="email"></label>
+        <label>Contraseña<input name="password" type="password" required></label>
+        <label>Nivel académico
+          <select name="teaching_level" id="teaching-level">
+            <option value="Educación inicial">Educación inicial</option>
+            <option value="Primaria" selected>Primaria</option>
+            <option value="Secundaria">Secundaria</option>
+          </select>
+        </label>
+        <label>Grado / nivel guía
+          <input name="guide_grade" id="guide-grade" list="guide-grade-options" placeholder="Ej. Primaria o 7mo" required>
+          <datalist id="guide-grade-options">{% for grade in grade_options %}<option value="{{ grade }}">{% endfor %}<option value="Primaria"></datalist>
+        </label>
+        <label>Sección/Nivel<input name="guide_section" placeholder="Ej. A, maternal o preescolar"></label>
+        <label>Año académico<input name="guide_year" type="number" min="2000" max="2100"></label>
+      </div>
+    </div>
+    <div class="form-section">
+      <h3>Materias que podrá impartir</h3>
+      <p class="muted">La lista viene del catálogo de materias activas. Al indicar Primaria o un grado de 1ro a 6to, se marcan todas; puedes ajustar la selección.</p>
+      {% if subjects %}
+      <div class="check-list">
+        {% for subject in subjects %}
+        <label><input type="checkbox" name="subject_id" value="{{ subject.id }}"><span><strong>{{ subject.name }}</strong>{% if subject.grade %}<small>{{ subject.grade }}{% if subject.year %} · {{ subject.year }}{% endif %}</small>{% endif %}</span></label>
+        {% endfor %}
+      </div>
+      {% else %}<p class="muted">No hay materias activas en el catálogo. Primero agrega materias para poder asignarlas.</p>{% endif %}
+    </div>
+    <div class="form-actions"><button type="submit">Crear docente guía</button></div>
+  </form>
+</div>
+{% if not director_exists %}
+<div class="card">
+  <h2>Configurar la cuenta fija de Director</h2>
+  <p class="muted">Solo puede existir un Director. Su nombre podrá actualizarse después desde Editar.</p>
+  <form method="post" class="grid">
+    <input type="hidden" name="account_type" value="Director">
+    <input type="hidden" name="role" value="director">
+    <label>Nombres<input name="first_name" required></label>
+    <label>Apellidos<input name="last_name" required></label>
+    <label>Email<input name="email" type="email"></label>
+    <label>Fecha de ingreso<input name="hire_date" type="date" required></label>
+    <label>Contraseña inicial<input name="password" type="password" required></label>
+    <label>Estado laboral<select name="employment_status"><option>Activo</option><option>Baja</option><option>Subsidio</option><option>Permiso</option></select></label>
+    <label>Inicio del estado<input name="status_start_date" type="date"></label>
+    <button type="submit">Configurar Director</button>
+  </form>
+</div>
+{% endif %}
+{% if not secretary_exists %}
+<div class="card">
+  <h2>Configurar la cuenta fija de Secretaría</h2>
+  <p class="muted">Esta configuración se realiza una sola vez; después solo se actualizan los datos de la cuenta existente.</p>
+  <form method="post" class="grid">
+    <input type="hidden" name="account_type" value="Secretaría">
+    <input type="hidden" name="role" value="secretary">
+    <label>Nombres<input name="first_name" required></label>
+    <label>Apellidos<input name="last_name" required></label>
+    <label>Email<input name="email" type="email"></label>
+    <label>Fecha de ingreso<input name="hire_date" type="date" required></label>
+    <label>Contraseña inicial<input name="password" type="password" required></label>
+    <label>Estado laboral<select name="employment_status"><option>Activo</option><option>Baja</option><option>Subsidio</option><option>Permiso</option></select></label>
+    <label>Inicio del estado<input name="status_start_date" type="date"></label>
+    <button type="submit">Configurar Secretaría</button>
+  </form>
+</div>
+{% endif %}
+<div class="card">
+  <div class="section-title"><h2>Cuentas registradas</h2><span class="muted">{{ teachers|length }} cuenta(s)</span></div>
+  <div class="teacher-list">
+    {% for teacher in teachers %}
+    <div class="teacher-item">
+      <span class="teacher-avatar">{{ teacher.name[:1]|upper }}</span>
+      <span class="teacher-info">
+        <strong>{{ teacher.name }}</strong>
+        <small>
+          {{ teacher.email or 'Sin email' }} ·
+          {% if teacher.role == 'admin_support' %}Admin / Soporte · acceso total
+          {% elif teacher.role == 'director' %}Director · cuenta fija
+          {% elif teacher.role == 'secretary' %}Secretaría · consulta e impresión
+          {% else %}Docente guía{% endif %}
+          {% if teacher.hire_date %} · Ingreso: {{ teacher.hire_date }}{% endif %}
+          {% if teacher.employment_status and teacher.role in ('director','secretary') %} · {{ teacher.employment_status }}{% endif %}
+        </small>
+      </span>
+      {% if teacher.grade or teacher.section or teacher.academic_year %}<span class="teacher-context">{{ teacher.grade or '-' }}{% if teacher.section %} · {{ teacher.section }}{% endif %}{% if teacher.academic_year %} · {{ teacher.academic_year }}{% endif %}</span>{% endif %}
+      <a class="button small-button" href="{{ url_for('edit_teacher',teacher_id=teacher.id) }}">Editar datos y materias</a>
+      {% if teacher.id != session.get('teacher_id') %}
+      <form method="post" action="{{ url_for('delete_teacher',teacher_id=teacher.id) }}" class="inline-form" onsubmit="return confirm('¿Eliminar esta cuenta, aunque sea fija? Esta acción no se puede deshacer.')"><button class="danger small-button" type="submit">Eliminar cuenta</button></form>
+      {% else %}<span class="muted">Sesión actual protegida</span>{% endif %}
+    </div>
+    {% else %}<p class="muted">No hay cuentas registradas.</p>{% endfor %}
+  </div>
+</div>
+<script>
+const gradeInput=document.getElementById('guide-grade');
+const teachingLevelInput=document.getElementById('teaching-level');
+const subjectInputs=[...document.querySelectorAll('input[name="subject_id"]')];
+const primaryGrades=new Set(['primaria','educación primaria','educacion primaria','1ro','2do','3ro','4to','5to','6to']);
+let wasPrimary=false;
+function updatePrimarySubjects(){
+  const grade=(gradeInput.value||'').trim().toLocaleLowerCase('es');
+  const primary=primaryGrades.has(grade) || (teachingLevelInput && teachingLevelInput.value === 'Primaria');
+  if(primary&&!wasPrimary)subjectInputs.forEach(input=>input.checked=true);
+  wasPrimary=primary;
+}
+gradeInput?.addEventListener('input',updatePrimarySubjects);
+teachingLevelInput?.addEventListener('change',updatePrimarySubjects);
+</script>
+<style>
+.page-heading{margin-bottom:1rem}.teacher-creation{border-top:4px solid #2563eb}.form-section{padding:1rem 0;border-bottom:1px solid #eaecf0}.form-section h3{margin:.1rem 0 .35rem}.check-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.55rem}.check-list label{display:flex;gap:.5rem;align-items:flex-start;background:#f8fafc;padding:.7rem;border:1px solid #e4e7ec;border-radius:8px}.check-list label small{display:block;color:#667085}.check-list input{width:auto;margin:.2rem .2rem 0 0}.form-actions{display:flex;justify-content:flex-end;padding-top:1rem}.form-actions button{width:auto;min-width:220px}.teacher-list{display:grid;gap:.55rem;margin-top:1rem}.teacher-item{display:flex;align-items:center;gap:.7rem;padding:.75rem;border:1px solid #eaecf0;border-radius:10px;background:#f8fafc}.teacher-avatar{display:grid;place-items:center;width:2.2rem;height:2.2rem;flex:0 0 2.2rem;border-radius:50%;background:#dbeafe;color:#1d4ed8;font-weight:800}.teacher-info{min-width:0;flex:1}.teacher-info strong,.teacher-info small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.teacher-info small{color:#667085}.teacher-context{color:#475467;font-size:.8rem}.small-button{width:auto;margin:0;padding:.45rem .6rem;font-size:.82rem}.inline-form{display:inline}.inline-form button{width:auto;margin:0}fieldset{border:1px solid #d9e2ec;border-radius:10px;padding:1rem}@media(max-width:720px){.form-actions button{width:100%}.teacher-item{flex-wrap:wrap}.teacher-context{width:100%;padding-left:2.9rem}}
+</style>
 {% endblock %}

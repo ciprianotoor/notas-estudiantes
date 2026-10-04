@@ -5,12 +5,42 @@
 <div class="card">
   <form method="post" class="grid">
     <label>Nombre<input name="name" value="{{ teacher.name }}" required></label>
+    <label>Nombres<input name="first_name" value="{{ teacher.first_name or '' }}"></label>
+    <label>Apellidos<input name="last_name" value="{{ teacher.last_name or '' }}"></label>
+    <label>Fecha de ingreso<input name="hire_date" type="date" value="{{ teacher.hire_date or '' }}"></label>
+    {% if teacher.role == 'director' %}
     <label>Motivo del cambio<input name="change_reason" placeholder="Ej. Sustitución por renuncia"><small class="muted">Quedará en el historial administrativo.</small></label>
+    {% endif %}
     <label>Email<input name="email" value="{{ teacher.email }}"></label>
-    <label>Tipo de cuenta<select name="role" id="edit-role" {% if teacher.is_admin %}disabled{% endif %}><option value="teacher" {% if teacher.role == 'teacher' %}selected{% endif %}>Docente de materia</option><option value="guide" {% if teacher.role == 'guide' %}selected{% endif %}>Docente guía</option><option value="director" {% if teacher.role == 'director' %}selected{% endif %}>Director académico</option><option value="secretary" {% if teacher.role == 'secretary' %}selected{% endif %}>Secretaría</option></select>{% if teacher.is_admin %}<small class="muted">La cuenta admin siempre conserva el máximo nivel.</small>{% endif %}</label>
+    {% if teacher.role == 'admin_support' %}
+    <label>Tipo de cuenta<input value="Admin / Soporte (acceso total)" disabled></label>
+    {% elif teacher.role == 'director' %}
+    <label>Tipo de cuenta<input value="Director (cuenta fija)" disabled></label>
+    {% elif teacher.role == 'secretary' %}
+    <label>Tipo de cuenta<input value="Secretaría (cuenta fija)" disabled></label>
+    {% else %}
+    <label>Tipo de cuenta<input value="Docente guía" disabled></label>
+    <input type="hidden" name="role" value="guide">
+    {% endif %}
+    <label>Nivel académico<select name="teaching_level">
+      <option value="Educación inicial" {% if teacher.teaching_level == 'Educación inicial' %}selected{% endif %}>Educación inicial</option>
+      <option value="Primaria" {% if teacher.teaching_level == 'Primaria' or teacher.role not in ('secretary','director') and not teacher.teaching_level %}selected{% endif %}>Primaria</option>
+      <option value="Secundaria" {% if teacher.teaching_level == 'Secundaria' %}selected{% endif %}>Secundaria</option>
+    </select></label>
     <label class="academic-field grade-section-field">Grado / curso<input name="teacher_grade" value="{{ teacher.grade or '' }}"></label>
-    <label class="academic-field grade-section-field">Sección<input name="teacher_section" value="{{ teacher.section or '' }}"></label>
+    <label class="academic-field grade-section-field">Sección/Nivel<input name="teacher_section" value="{{ teacher.section or '' }}"></label>
     <label class="academic-field academic-year-field">Año académico<input name="teacher_year" type="number" value="{{ teacher.academic_year or '' }}" min="2000" max="2100" required></label>
+    {% if teacher.role in ('guide', 'teacher') or not teacher.is_admin and teacher.role != 'secretary' %}
+    <fieldset class="subject-assignment">
+      <legend>Materias que imparte este docente</legend>
+      <p class="muted">Selecciona las materias activas del catálogo que corresponden a este docente.</p>
+      {% if subjects %}
+      <div class="check-list">{% for subject in subjects %}
+        <label><input type="checkbox" name="subject_id" value="{{ subject.id }}" {% if subject.id in assigned_subject_ids %}checked{% endif %}><span><strong>{{ subject.name }}</strong>{% if subject.grade %}<small>{{ subject.grade }}{% if subject.year %} · {{ subject.year }}{% endif %}</small>{% endif %}</span></label>
+      {% endfor %}</div>
+      {% else %}<p class="muted">No hay materias activas en el catálogo.</p>{% endif %}
+    </fieldset>
+    {% endif %}
     <label>Nueva contraseña / restablecer clave<input name="password" type="password"><small class="muted">Déjalo vacío para conservarla.</small></label>
     <label>Estado laboral<select name="employment_status"><option {% if teacher.employment_status == 'Activo' %}selected{% endif %}>Activo</option><option {% if teacher.employment_status == 'Baja' %}selected{% endif %}>Baja</option><option {% if teacher.employment_status == 'Subsidio' %}selected{% endif %}>Subsidio</option><option {% if teacher.employment_status == 'Permiso' %}selected{% endif %}>Permiso</option><option {% if teacher.employment_status == 'Reingreso' %}selected{% endif %}>Reingreso</option></select></label>
     <label>Inicio del estado<input name="status_start_date" type="date" value="{{ teacher.status_start_date or teacher.hire_date or '' }}"></label>
@@ -22,5 +52,5 @@
 </div>
 <div class="card"><h2>Historial administrativo</h2>{% if history %}<table><tr><th>Fecha</th><th>Cambio</th><th>Antes</th><th>Ahora</th><th>Motivo</th><th>Registró</th></tr>{% for item in history %}<tr><td>{{ item.created_at }}</td><td>{{ item.action }}</td><td>{{ item.previous_name }}</td><td>{{ item.new_name }}</td><td>{{ item.reason }}</td><td>{{ item.changed_by_name or 'Sistema' }}</td></tr>{% endfor %}</table>{% else %}<p class="muted">No hay cambios registrados.</p>{% endif %}</div>
 <div class="card"><h2>Historial laboral</h2>{% if employment_history %}<table><tr><th>Fecha</th><th>Estado anterior</th><th>Nuevo estado</th><th>Inicio</th><th>Fin</th><th>Reingreso</th><th>Motivo</th></tr>{% for item in employment_history %}<tr><td>{{ item.created_at }}</td><td>{{ item.previous_status }}</td><td>{{ item.new_status }}</td><td>{{ item.start_date }}</td><td>{{ item.end_date }}</td><td>{{ item.reentry_date }}</td><td>{{ item.reason }}</td></tr>{% endfor %}</table>{% else %}<p class="muted">No hay cambios laborales registrados.</p>{% endif %}</div>
-<script>const editRole=document.getElementById('edit-role');const gradeFields=document.querySelectorAll('.grade-section-field');const yearField=document.querySelector('.academic-year-field');function syncEditRole(){const showGrade=editRole.value==='teacher'||editRole.value==='guide';gradeFields.forEach(field=>{field.hidden=!showGrade;field.querySelectorAll('input').forEach(input=>{input.disabled=!showGrade;});});if(yearField){yearField.hidden=false;yearField.querySelectorAll('input').forEach(input=>{input.disabled=false;});}}if(editRole){editRole.addEventListener('change',syncEditRole);syncEditRole();}</script>
+<style>.subject-assignment{grid-column:1/-1;border:1px solid #d9e2ec;border-radius:10px;padding:1rem}.check-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.55rem}.check-list label{display:flex;gap:.5rem;align-items:flex-start;background:#f8fafc;padding:.7rem;border:1px solid #e4e7ec;border-radius:8px}.check-list label small{display:block;color:#667085}.check-list input{width:auto;margin:.2rem .2rem 0 0}</style>
 {% endblock %}

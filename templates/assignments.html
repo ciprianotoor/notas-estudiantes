@@ -1,34 +1,45 @@
 {% extends 'base.html' %}
-{% block title %}Asignaciones{% endblock %}
+{% block title %}Materias de docentes guía{% endblock %}
 {% block content %}
-<h1>Asignaciones de materias</h1>
+<h1>Materias de docentes guía</h1>
+<p class="muted">Selecciona un docente guía y las materias del catálogo que podrá impartir. En Primaria se proponen todas las materias activas por defecto; puedes ajustar la selección en cualquier momento.</p>
 <div class="card">
-  <h2>Asignar materia a docente</h2>
-  <form method="post" class="grid">
-    <label>Docente<select name="teacher_id" required>{% for teacher in teachers %}<option value="{{ teacher.id }}">{{ teacher.name }}</option>{% endfor %}</select></label>
-    <label>Materia<select name="subject_id" required>{% for subj in subjects %}<option value="{{ subj.id }}">{{ subj.name }}{% if subj.grade %} — {{ subj.grade }}{% endif %}{% if subj.year %} ({{ subj.year }}){% endif %}</option>{% endfor %}</select></label>
-    <label>&nbsp;<button>Asignar</button></label>
+  <form method="post">
+    <label>Docente guía
+      <select name="teacher_id" id="teacher-id" required>
+        {% for teacher in teachers %}<option value="{{ teacher.id }}">{{ teacher.name }}{% if teacher.grade %} · {{ teacher.grade }}{% endif %}</option>{% endfor %}
+      </select>
+    </label>
+    <fieldset>
+      <legend>Materias permitidas</legend>
+      {% if subjects %}
+      <div class="check-list">
+        {% for subject in subjects %}
+        <label><input type="checkbox" name="subject_id" value="{{ subject.id }}"><span><strong>{{ subject.name }}</strong>{% if subject.grade %}<small>{{ subject.grade }}{% if subject.year %} · {{ subject.year }}{% endif %}</small>{% endif %}</span></label>
+        {% endfor %}
+      </div>
+      {% else %}<p class="muted">No hay materias activas en el catálogo.</p>{% endif %}
+    </fieldset>
+    <button type="submit">Guardar materias del docente</button>
   </form>
 </div>
 <div class="card">
-  <h2>Asignaciones existentes</h2>
+  <h2>Asignaciones actuales</h2>
   {% if assignments %}
-  <table>
-    <thead><tr><th>Docente</th><th>Materia</th><th>Acciones</th></tr></thead>
-    <tbody>
-      {% for a in assignments %}
-      <tr>
-        <td>{{ a.teacher_name }}</td>
-        <td>{{ a.subject_name }}</td>
-        <td>
-          <form method="post" action="{{ url_for('delete_assignment', teacher_id=a.teacher_id, subject_id=a.subject_id) }}" onsubmit="return confirm('Eliminar asignación?')"><button class="danger">Eliminar</button></form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="muted">No hay asignaciones registradas.</p>
-  {% endif %}
+  <table><thead><tr><th>Docente guía</th><th>Materia</th><th></th></tr></thead><tbody>
+    {% for item in assignments %}
+    <tr><td>{{ item.teacher_name }}</td><td>{{ item.subject_name }}</td><td><form method="post" action="{{ url_for('delete_assignment',teacher_id=item.teacher_id,subject_id=item.subject_id) }}"><button class="danger" type="submit">Desasignar</button></form></td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}<p class="muted">Todavía no hay asignaciones explícitas. Los docentes guía existentes conservan el comportamiento previo hasta que se guarden sus materias.</p>{% endif %}
 </div>
+<style>.check-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.55rem}.check-list label{display:flex;gap:.5rem;align-items:flex-start;background:#f8fafc;padding:.7rem;border:1px solid #e4e7ec;border-radius:8px}.check-list label small{display:block;color:#667085}.check-list input{width:auto;margin:.2rem .2rem 0 0}.danger{width:auto}fieldset{border:1px solid #d9e2ec;border-radius:10px;margin:1rem 0;padding:1rem}legend{font-weight:700}</style>
+<script>
+const assignmentsByTeacher={{ teacher_assignments|tojson }};
+const teacherSelect=document.getElementById('teacher-id');
+const subjectChecks=[...document.querySelectorAll('input[name="subject_id"]')];
+function showTeacherAssignments(){const selected=assignmentsByTeacher[teacherSelect.value]||[];subjectChecks.forEach(check=>{check.checked=selected.includes(Number(check.value));});}
+teacherSelect?.addEventListener('change',showTeacherAssignments);
+showTeacherAssignments();
+</script>
 {% endblock %}
