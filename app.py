@@ -589,12 +589,12 @@ def qualitative_learning_label(value):
         return "Sin registro"
     value = float(value)
     if value >= 90:
-        return "AA - Aprendizaje Avanzado"
+        return "AA"
     if value >= 76:
-        return "AS - Aprendizaje Satisfactorio"
+        return "AS"
     if value >= 60:
-        return "AF - Aprendizaje Fundamental"
-    return "AI - Aprendizaje Inicial"
+        return "AF"
+    return "AI"
 
 
 def grade_value(row):
