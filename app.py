@@ -2920,7 +2920,11 @@ def make_pdf(student_ids, selected_partials):
         detail_data = [["Materia", "Parcial", "Evaluación", "Nota", "Fecha"]]
         extraordinary = [["Materia", "Parcial", "Tipo", "Fecha", "Nota / 40"]]
         selected_total = 0.0
-        for sid, subject_data in partials_by_subject.items():
+        # La boleta debe incluir todo el catálogo de asignaturas, aunque aún
+        # no existan registros de calificación para el estudiante.
+        subject_ids = sorted(set(subject_names) | set(partials_by_subject), key=lambda sid: subject_names.get(sid, "General").lower())
+        for sid in subject_ids:
+            subject_data = partials_by_subject.get(sid, {"partials": {}})
             subject_name = subject_names.get(sid, "General") if sid else "General"
             subject_values = {}
             for p in sorted(subject_data["partials"]):
@@ -2941,7 +2945,7 @@ def make_pdf(student_ids, selected_partials):
                 detail_data.append([subject_name, partial_name(p), "Nota final del parcial", f"{row['result']:.2f} / 100", "-"])
             included = [value for p, value in subject_values.items() if not selected_partials or p in selected_partials]
             final_value = sum(included) / len(included) if included else None
-            summary_data.append([subject_name] + [f"{subject_values[p]:.2f}\n{qualitative_learning_label(subject_values[p])}" if p in subject_values else "-" for p in range(1, 5)] + [f"{final_value:.2f}\n{qualitative_learning_label(final_value)}" if final_value is not None else "-"])
+            summary_data.append([subject_name] + [f"{subject_values[p]:.2f}\n{qualitative_learning_label(subject_values[p])}" if p in subject_values else "Sin calificación" for p in range(1, 5)] + [f"{final_value:.2f}\n{qualitative_learning_label(final_value)}" if final_value is not None else "Sin calificación"])
         if len(summary_data) == 1:
             summary_data.append(["-", "-", "-", "-", "-", "-"])
             detail_data.append(["-", "-", "Sin registros", "-", "-"])
