@@ -2913,7 +2913,7 @@ def make_pdf(student_ids, selected_partials):
         subject_label = ", ".join(subject_names_list) if subject_names_list else "Sin materias registradas"
         partials_label = ", ".join(partial_name(p) for p in selected_partials) if selected_partials else "Todos los parciales"
         story += [Paragraph(current["school_name"], styles["Title"]), Paragraph("REPORTE ACADÉMICO", styles["Heading2"]), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 10)]
-        conduct_label = f"{student['conduct_score']:.2f} / 100" if student['conduct_score'] is not None else (student['conduct'] or "Sin registrar")
+        conduct_label = student["conduct"] or "Sin registrar"
         conduct_data = [["Evaluación", "Calificación", "Criterios utilizados", "Incidentes registrados", "Observaciones"], ["Conducta", conduct_label, student['conduct_criteria'] or "Sin registrar", student['conduct_incidents'] or "Ninguno registrado", student['observations'] or "Sin observaciones"]]
         # Matriz MINED: cada corte tiene cuantitativa y cualitativa en columnas
         # paralelas; los semestres y el cierre anual también se promedian.
@@ -2957,8 +2957,6 @@ def make_pdf(student_ids, selected_partials):
         if len(summary_data) == 2:
             summary_data.append(["-"] + ["-"] * 10)
             detail_data.append(["-", "-", "Sin registros", "-", "-"])
-        conduct_value = student["conduct_score"]
-        conduct_label = qualitative_learning_label(conduct_value) if conduct_value is not None else (student["conduct"] or "Sin registrar")
         conduct_row = ["Desempeño personal y ciudadano (conducta)"]
         for _ in range(5):
             conduct_row.extend(["-", conduct_label])
