@@ -195,6 +195,17 @@ def init_db():
             PRIMARY KEY(teacher_id, capability),
             FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS teacher_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            previous_name TEXT NOT NULL DEFAULT '',
+            new_name TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            changed_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS assignments (
             teacher_id INTEGER NOT NULL, subject_id INTEGER NOT NULL,
             PRIMARY KEY(teacher_id,subject_id),
@@ -1491,6 +1502,7 @@ def edit_teacher(teacher_id):
             teacher_grade = request.form.get("teacher_grade", "").strip()
             teacher_section = request.form.get("teacher_section", "").strip().upper()
             teacher_year = request.form.get("teacher_year", type=int)
+            change_reason = request.form.get("change_reason", "").strip()
             role = "guide" if teacher["is_admin"] else request.form.get("role", teacher["role"])
             if role not in ("guide", "teacher", "director", "secretary"):
                 flash("Tipo de docente inválido.", "error")
@@ -1505,16 +1517,20 @@ def edit_teacher(teacher_id):
                 if remaining_guides == 0:
                     flash("Debe existir al menos un docente guía.", "error")
                     return redirect(url_for("teachers_view"))
+            final_name = name or teacher["name"]
             if password:
                 connection.execute("UPDATE teachers SET name=?,email=?,password=?,grade=?,section=?,academic_year=? WHERE id=?",
-                                   (name or teacher["name"], email or teacher["email"], generate_password_hash(password), teacher_grade, teacher_section, teacher_year, teacher_id))
+                                   (final_name, email or teacher["email"], generate_password_hash(password), teacher_grade, teacher_section, teacher_year, teacher_id))
             else:
                 connection.execute("UPDATE teachers SET name=?,email=?,grade=?,section=?,academic_year=? WHERE id=?",
-                                   (name or teacher["name"], email or teacher["email"], teacher_grade, teacher_section, teacher_year, teacher_id))
+                                   (final_name, email or teacher["email"], teacher_grade, teacher_section, teacher_year, teacher_id))
+            if final_name != teacher["name"]:
+                connection.execute("INSERT INTO teacher_history(teacher_id,action,previous_name,new_name,reason,changed_by) VALUES(?,?,?,?,?,?)", (teacher_id, "Sustitución o actualización de nombre", teacher["name"], final_name, change_reason or "Cambio registrado por administración", session.get("teacher_id")))
             connection.execute("INSERT INTO teacher_roles(teacher_id,role) VALUES(?,?) ON CONFLICT(teacher_id) DO UPDATE SET role=excluded.role", (teacher_id, role))
             flash("Docente actualizado.", "success")
             return redirect(url_for("teachers_view"))
-    return render_template("teachers_edit.html", teacher=teacher)
+    history = connection.execute("SELECT h.*, t.name AS changed_by_name FROM teacher_history h LEFT JOIN teachers t ON t.id=h.changed_by WHERE h.teacher_id=? ORDER BY h.created_at DESC, h.id DESC", (teacher_id,)).fetchall()
+    return render_template("teachers_edit.html", teacher=teacher, history=history)
 
 
 @app.get("/export.xlsx")

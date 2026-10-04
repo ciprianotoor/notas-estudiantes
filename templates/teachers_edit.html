@@ -5,6 +5,7 @@
 <div class="card">
   <form method="post" class="grid">
     <label>Nombre<input name="name" value="{{ teacher.name }}" required></label>
+    <label>Motivo del cambio<input name="change_reason" placeholder="Ej. Sustitución por renuncia"><small class="muted">Quedará en el historial administrativo.</small></label>
     <label>Email<input name="email" value="{{ teacher.email }}"></label>
     <label>Tipo de docente<select name="role" {% if teacher.is_admin %}disabled{% endif %}><option value="teacher" {% if teacher.role == 'teacher' %}selected{% endif %}>Docente de materia</option><option value="guide" {% if teacher.role == 'guide' %}selected{% endif %}>Docente guía</option></select>{% if teacher.is_admin %}<small class="muted">La cuenta admin siempre conserva el máximo nivel.</small>{% endif %}</label>
     <label>Grado / curso<input name="teacher_grade" value="{{ teacher.grade or '' }}" required></label>
@@ -14,4 +15,5 @@
     <label>&nbsp;<button>Guardar</button></label>
   </form>
 </div>
+<div class="card"><h2>Historial administrativo</h2>{% if history %}<table><tr><th>Fecha</th><th>Cambio</th><th>Antes</th><th>Ahora</th><th>Motivo</th><th>Registró</th></tr>{% for item in history %}<tr><td>{{ item.created_at }}</td><td>{{ item.action }}</td><td>{{ item.previous_name }}</td><td>{{ item.new_name }}</td><td>{{ item.reason }}</td><td>{{ item.changed_by_name or 'Sistema' }}</td></tr>{% endfor %}</table>{% else %}<p class="muted">No hay cambios registrados.</p>{% endif %}</div>
 {% endblock %}
