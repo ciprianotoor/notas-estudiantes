@@ -584,17 +584,17 @@ def partial_name(partial):
 
 
 def qualitative_learning_label(value):
-    """Equivalencia cualitativa de la normativa SNEPA/MINED."""
+    """Equivalencia cualitativa oficial SNEPA/MINED para el aprendizaje."""
     if value is None:
         return "Sin registro"
     value = float(value)
     if value >= 90:
-        return "AA"
+        return "AA - Aprendizaje Avanzado"
     if value >= 76:
-        return "AS"
+        return "AS - Aprendizaje Satisfactorio"
     if value >= 60:
-        return "AF"
-    return "AI"
+        return "AF - Aprendizaje Fundamental"
+    return "AI - Aprendizaje Inicial"
 
 
 def grade_value(row):
