@@ -2914,7 +2914,8 @@ def make_pdf(student_ids, selected_partials):
         partials_label = ", ".join(partial_name(p) for p in selected_partials) if selected_partials else "Todos los parciales"
         story += [Paragraph(current["school_name"], styles["Title"]), Paragraph("REPORTE ACADÉMICO", styles["Heading2"]), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 10)]
         conduct_label = student["conduct"] or "Sin registrar"
-        conduct_data = [["Evaluación", "Calificación", "Criterios utilizados", "Incidentes registrados", "Observaciones"], ["Conducta", conduct_label, student['conduct_criteria'] or "Sin registrar", student['conduct_incidents'] or "Ninguno registrado", student['observations'] or "Sin observaciones"]]
+        conduct_quantitative = f"{student['conduct_score']:.2f} / 100" if student["conduct_score"] is not None else "Sin registrar"
+        conduct_data = [["Evaluación", "Cuantitativa", "Cualitativa", "Criterios utilizados", "Incidentes registrados", "Observaciones"], ["Conducta", conduct_quantitative, conduct_label, student['conduct_criteria'] or "Sin registrar", student['conduct_incidents'] or "Ninguno registrado", student['observations'] or "Sin observaciones"]]
         # Matriz MINED: cada corte tiene cuantitativa y cualitativa en columnas
         # paralelas; los semestres y el cierre anual también se promedian.
         summary_data = [
@@ -2958,10 +2959,11 @@ def make_pdf(student_ids, selected_partials):
             summary_data.append(["-"] + ["-"] * 10)
             detail_data.append(["-", "-", "Sin registros", "-", "-"])
         conduct_row = ["Desempeño personal y ciudadano (conducta)"]
+        conduct_quantitative_short = f"{student['conduct_score']:.2f}" if student["conduct_score"] is not None else "-"
         for _ in range(5):
-            conduct_row.extend(["-", conduct_label])
+            conduct_row.extend([conduct_quantitative_short, conduct_label])
         summary_data.append(conduct_row)
-        conduct_table = Table(conduct_data, colWidths=[1.1*inch, 1.1*inch, 2.45*inch, 2.45*inch, 2.55*inch]); conduct_table.setStyle(header_style)
+        conduct_table = Table(conduct_data, colWidths=[.9*inch, 1.05*inch, 1.05*inch, 2.25*inch, 2.25*inch, 2.35*inch]); conduct_table.setStyle(header_style)
         summary_table = Table(summary_data, colWidths=[2.1*inch] + [.82*inch] * 10)
         summary_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), "#17365d"), ("TEXTCOLOR", (0, 0), (-1, 0), "white"),
