@@ -1406,6 +1406,9 @@ def school_logo():
 def teachers_view():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+        hire_date = request.form.get("hire_date", "").strip()
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "").strip()
         role = request.form.get("role", "teacher")
