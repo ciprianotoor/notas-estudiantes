@@ -1387,6 +1387,8 @@ def teachers_view():
         with db() as state_connection:
             non_admin_guides = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='guide'").fetchone()["n"]
             non_admin_subject_teachers = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='teacher'").fetchone()["n"]
+            existing_director = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='director'").fetchone()["n"]
+            existing_secretary = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='secretary'").fetchone()["n"]
         if role not in ("guide", "teacher", "director", "secretary"):
             flash("Selecciona un tipo de docente válido.", "error")
         elif non_admin_guides == 0 and role not in ("guide", "director", "secretary"):
@@ -1397,6 +1399,10 @@ def teachers_view():
             flash("Nombre y contraseña son obligatorios.", "error")
         elif role == "guide" and (not guide_grade or not guide_section or not guide_year):
             flash("Para el docente guía indica grado, sección y año de referencia.", "error")
+        elif role == "director" and existing_director:
+            flash("Solo puede existir un Director académico.", "error")
+        elif role == "secretary" and existing_secretary:
+            flash("Solo puede existir una cuenta de Secretaría.", "error")
         elif role == "teacher" and not name:
             flash("El nombre del docente es obligatorio.", "error")
         else:
@@ -1486,9 +1492,14 @@ def edit_teacher(teacher_id):
             teacher_section = request.form.get("teacher_section", "").strip().upper()
             teacher_year = request.form.get("teacher_year", type=int)
             role = "guide" if teacher["is_admin"] else request.form.get("role", teacher["role"])
-            if role not in ("guide", "teacher"):
+            if role not in ("guide", "teacher", "director", "secretary"):
                 flash("Tipo de docente inválido.", "error")
                 return redirect(url_for("teachers_view"))
+            if role in ("director", "secretary"):
+                existing = connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role=? AND t.id<>?", (role, teacher_id)).fetchone()["n"]
+                if existing:
+                    flash("Solo puede existir una cuenta de este tipo.", "error")
+                    return redirect(url_for("teachers_view"))
             if teacher["role"] == "guide" and role != "guide":
                 remaining_guides = connection.execute("SELECT COUNT(*) AS n FROM teacher_roles WHERE role='guide' AND teacher_id<>?", (teacher_id,)).fetchone()["n"]
                 if remaining_guides == 0:
