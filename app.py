@@ -380,7 +380,7 @@ def current_teacher_info():
         row = connection.execute("SELECT t.name,t.email,t.is_admin,COALESCE(r.role,'teacher') AS role FROM teachers t LEFT JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.id=?", (teacher_id,)).fetchone()
     if not row:
         return None
-    role_label = "Director@" if row["is_admin"] else ("Docente guía" if row["role"] == "guide" else "Docente de materia")
+    role_label = "Administrador" if row["is_admin"] else {"director": "Director académico", "secretary": "Secretaría", "guide": "Docente guía", "teacher": "Docente de materia"}.get(row["role"], "Cuenta académica")
     return {**dict(row), "role_label": role_label}
 
 
@@ -1387,11 +1387,11 @@ def teachers_view():
         with db() as state_connection:
             non_admin_guides = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='guide'").fetchone()["n"]
             non_admin_subject_teachers = state_connection.execute("SELECT COUNT(*) AS n FROM teachers t JOIN teacher_roles r ON r.teacher_id=t.id WHERE t.is_admin=0 AND r.role='teacher'").fetchone()["n"]
-        if role not in ("guide", "teacher", "director"):
+        if role not in ("guide", "teacher", "director", "secretary"):
             flash("Selecciona un tipo de docente válido.", "error")
-        elif non_admin_guides == 0 and role not in ("guide", "director"):
+        elif non_admin_guides == 0 and role not in ("guide", "director", "secretary"):
             flash("El primer docente que registres debe ser docente guía. Después podrás crear docentes de materia.", "error")
-        elif non_admin_guides > 0 and non_admin_subject_teachers == 0 and role not in ("teacher", "director"):
+        elif non_admin_guides > 0 and non_admin_subject_teachers == 0 and role not in ("teacher", "director", "secretary"):
             flash("Después del docente guía debes registrar un docente de materia para completar esta etapa.", "error")
         elif not name or not password:
             flash("Nombre y contraseña son obligatorios.", "error")
