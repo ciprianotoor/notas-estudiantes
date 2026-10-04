@@ -403,6 +403,18 @@ def init_db():
             FOREIGN KEY(academic_year_id) REFERENCES academic_years(id)
         );
         """)
+        default_subjects = [
+            ('MAT', 'Matemática', 'Científica'),
+            ('LL', 'Lengua y Literatura', 'Comunicativa'),
+            ('CN', 'Ciencias Naturales', 'Científica'),
+            ('CS', 'Ciencias Sociales', 'Social'),
+            ('LE', 'Lengua Extranjera', 'Comunicativa'),
+            ('EF', 'Educación Física y Práctica Deportiva', 'Desarrollo personal'),
+            ('CV', 'Creciendo en Valores', 'Formación ciudadana'),
+            ('TAC', 'Talleres de Arte y Cultura', 'Arte y cultura'),
+        ]
+        for code, name, area in default_subjects:
+            connection.execute('INSERT OR IGNORE INTO subject_catalog(code,name,area) VALUES(?,?,?)', (code, name, area))
 
 
 def settings():
@@ -1963,6 +1975,34 @@ def academic_structure():
         guides = connection.execute('SELECT id,name FROM teachers WHERE is_admin=0 ORDER BY name').fetchall()
         sections = connection.execute('SELECT s.*, ay.year, g.name AS grade_name, t.name AS guide_name FROM sections s JOIN academic_years ay ON ay.id=s.academic_year_id JOIN grades g ON g.id=s.grade_id LEFT JOIN teachers t ON t.id=s.teacher_guide_id WHERE s.active=1 ORDER BY ay.year DESC, g.name, s.name').fetchall()
     return render_template('academic_structure.html', years=years, grades=grades, guides=guides, sections=sections)
+
+
+@app.route('/subject-catalog', methods=['GET', 'POST'])
+@admin_required
+def subject_catalog():
+    if request.method == 'POST':
+        action = request.form.get('action')
+        subject_id = request.form.get('subject_id')
+        try:
+            with db() as connection:
+                if action == 'create':
+                    connection.execute('INSERT INTO subject_catalog(code,name,area,description) VALUES(?,?,?,?)', (request.form['code'].strip(), request.form['name'].strip(), request.form.get('area','').strip(), request.form.get('description','').strip()))
+                elif action == 'update':
+                    connection.execute('UPDATE subject_catalog SET code=?,name=?,area=?,description=?,updated_at=CURRENT_TIMESTAMP WHERE id=?', (request.form['code'].strip(), request.form['name'].strip(), request.form.get('area','').strip(), request.form.get('description','').strip(), subject_id))
+                elif action == 'toggle':
+                    connection.execute('UPDATE subject_catalog SET active=CASE active WHEN 1 THEN 0 ELSE 1 END,updated_at=CURRENT_TIMESTAMP WHERE id=?', (subject_id,))
+                elif action == 'delete':
+                    refs = connection.execute('SELECT (SELECT COUNT(*) FROM academic_offerings WHERE subject_id=?) + (SELECT COUNT(*) FROM section_subjects ss JOIN academic_offerings ao ON ao.id=ss.academic_offering_id WHERE ao.subject_id=?) AS n', (subject_id, subject_id)).fetchone()['n']
+                    if refs:
+                        raise ValueError('La asignatura tiene referencias académicas; desactívala en lugar de eliminarla.')
+                    connection.execute('DELETE FROM subject_catalog WHERE id=?', (subject_id,))
+            flash('Catálogo actualizado.', 'success')
+        except (sqlite3.IntegrityError, ValueError) as error:
+            flash(f'No se pudo guardar: {error}', 'error')
+        return redirect(url_for('subject_catalog'))
+    with db() as connection:
+        subjects = connection.execute('SELECT * FROM subject_catalog ORDER BY active DESC, id').fetchall()
+    return render_template('subject_catalog.html', subjects=subjects)
 
 
 def make_pdf(student_ids, selected_partials):
