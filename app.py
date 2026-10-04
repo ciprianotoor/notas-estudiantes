@@ -135,6 +135,9 @@ def init_db():
         for column, definition in (("first_name", "TEXT DEFAULT ''"), ("last_name", "TEXT DEFAULT ''"), ("hire_date", "TEXT DEFAULT ''")):
             if column not in teacher_columns:
                 connection.execute(f"ALTER TABLE teachers ADD COLUMN {column} {definition}")
+        for column, definition in (("employment_status", "TEXT NOT NULL DEFAULT 'Activo'"), ("status_start_date", "TEXT DEFAULT ''"), ("status_end_date", "TEXT DEFAULT ''"), ("reentry_date", "TEXT DEFAULT ''")):
+            if column not in teacher_columns:
+                connection.execute(f"ALTER TABLE teachers ADD COLUMN {column} {definition}")
         teacher_setting_columns = {row["name"] for row in connection.execute("PRAGMA table_info(teacher_settings)")}
         if "theme" not in teacher_setting_columns:
             connection.execute("ALTER TABLE teacher_settings ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'")
@@ -206,6 +209,16 @@ def init_db():
             new_name TEXT NOT NULL DEFAULT '',
             reason TEXT NOT NULL DEFAULT '',
             changed_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS teacher_employment_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER NOT NULL,
+            previous_status TEXT NOT NULL DEFAULT '',
+            new_status TEXT NOT NULL,
+            start_date TEXT DEFAULT '', end_date TEXT DEFAULT '', reentry_date TEXT DEFAULT '',
+            reason TEXT DEFAULT '', changed_by INTEGER,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(teacher_id) REFERENCES teachers(id) ON DELETE CASCADE
         );
@@ -845,6 +858,11 @@ def groups():
         first_name = request.form.get("first_name", "").strip()
         last_name = request.form.get("last_name", "").strip()
         hire_date = request.form.get("hire_date", "").strip()
+        employment_status = request.form.get("employment_status", "Activo").strip() or "Activo"
+        status_start_date = request.form.get("status_start_date", hire_date).strip()
+        status_end_date = request.form.get("status_end_date", "").strip()
+        reentry_date = request.form.get("reentry_date", "").strip()
+        employment_reason = request.form.get("employment_reason", "").strip()
         grade = request.form.get("grade", "").strip()
         section = request.form.get("section", "").strip().upper()
         academic_year = request.form.get("academic_year", type=int)
@@ -1466,8 +1484,8 @@ def teachers_view():
                     if role == "teacher" and new_subject_name:
                         subject_cursor = connection.execute("INSERT INTO subjects(name,grade,year,created_by) VALUES(?,?,?,?)", (new_subject_name, teacher_grade, teacher_year, session.get("teacher_id")))
                         subject_ids.append(subject_cursor.lastrowid)
-                    cursor = connection.execute("INSERT INTO teachers(name,email,password,grade,section,academic_year,first_name,last_name,hire_date) VALUES(?,?,?,?,?,?,?,?,?)",
-                                                (name, email, generate_password_hash(password), teacher_grade, teacher_section, teacher_year, first_name, last_name, hire_date))
+                    cursor = connection.execute("INSERT INTO teachers(name,email,password,grade,section,academic_year,first_name,last_name,hire_date,employment_status,status_start_date,status_end_date,reentry_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                                (name, email, generate_password_hash(password), teacher_grade, teacher_section, teacher_year, first_name, last_name, hire_date, employment_status, status_start_date, status_end_date, reentry_date))
                     new_teacher_id = cursor.lastrowid
                     connection.execute("INSERT INTO teacher_roles(teacher_id,role) VALUES(?,?)", (new_teacher_id, role))
                     connection.execute("INSERT OR IGNORE INTO teacher_capabilities(teacher_id,capability) VALUES(?,?)", (new_teacher_id, role))
@@ -1531,6 +1549,11 @@ def edit_teacher(teacher_id):
             teacher_grade = request.form.get("teacher_grade", "").strip()
             teacher_section = request.form.get("teacher_section", "").strip().upper()
             teacher_year = request.form.get("teacher_year", type=int)
+            employment_status = request.form.get("employment_status", teacher["employment_status"] or "Activo").strip()
+            status_start_date = request.form.get("status_start_date", teacher["status_start_date"] or "").strip()
+            status_end_date = request.form.get("status_end_date", teacher["status_end_date"] or "").strip()
+            reentry_date = request.form.get("reentry_date", teacher["reentry_date"] or "").strip()
+            employment_reason = request.form.get("employment_reason", "").strip()
             change_reason = request.form.get("change_reason", "").strip()
             role = "guide" if teacher["is_admin"] else request.form.get("role", teacher["role"])
             if role not in ("guide", "teacher", "director", "secretary"):
@@ -1548,18 +1571,21 @@ def edit_teacher(teacher_id):
                     return redirect(url_for("teachers_view"))
             final_name = name or teacher["name"]
             if password:
-                connection.execute("UPDATE teachers SET name=?,email=?,password=?,grade=?,section=?,academic_year=? WHERE id=?",
-                                   (final_name, email or teacher["email"], generate_password_hash(password), teacher_grade, teacher_section, teacher_year, teacher_id))
+                connection.execute("UPDATE teachers SET name=?,email=?,password=?,grade=?,section=?,academic_year=?,employment_status=?,status_start_date=?,status_end_date=?,reentry_date=? WHERE id=?",
+                                   (final_name, email or teacher["email"], generate_password_hash(password), teacher_grade, teacher_section, teacher_year, employment_status, status_start_date, status_end_date, reentry_date, teacher_id))
             else:
-                connection.execute("UPDATE teachers SET name=?,email=?,grade=?,section=?,academic_year=? WHERE id=?",
-                                   (final_name, email or teacher["email"], teacher_grade, teacher_section, teacher_year, teacher_id))
+                connection.execute("UPDATE teachers SET name=?,email=?,grade=?,section=?,academic_year=?,employment_status=?,status_start_date=?,status_end_date=?,reentry_date=? WHERE id=?",
+                                   (final_name, email or teacher["email"], teacher_grade, teacher_section, teacher_year, employment_status, status_start_date, status_end_date, reentry_date, teacher_id))
+            if employment_status != (teacher["employment_status"] or "Activo"):
+                connection.execute("INSERT INTO teacher_employment_history(teacher_id,previous_status,new_status,start_date,end_date,reentry_date,reason,changed_by) VALUES(?,?,?,?,?,?,?,?)", (teacher_id, teacher["employment_status"] or "Activo", employment_status, status_start_date, status_end_date, reentry_date, employment_reason, session.get("teacher_id")))
             if final_name != teacher["name"]:
                 connection.execute("INSERT INTO teacher_history(teacher_id,action,previous_name,new_name,reason,changed_by) VALUES(?,?,?,?,?,?)", (teacher_id, "Sustitución o actualización de nombre", teacher["name"], final_name, change_reason or "Cambio registrado por administración", session.get("teacher_id")))
             connection.execute("INSERT INTO teacher_roles(teacher_id,role) VALUES(?,?) ON CONFLICT(teacher_id) DO UPDATE SET role=excluded.role", (teacher_id, role))
             flash("Docente actualizado.", "success")
             return redirect(url_for("teachers_view"))
     history = connection.execute("SELECT h.*, t.name AS changed_by_name FROM teacher_history h LEFT JOIN teachers t ON t.id=h.changed_by WHERE h.teacher_id=? ORDER BY h.created_at DESC, h.id DESC", (teacher_id,)).fetchall()
-    return render_template("teachers_edit.html", teacher=teacher, history=history)
+    employment_history = connection.execute("SELECT h.*, t.name AS changed_by_name FROM teacher_employment_history h LEFT JOIN teachers t ON t.id=h.changed_by WHERE h.teacher_id=? ORDER BY h.created_at DESC, h.id DESC", (teacher_id,)).fetchall()
+    return render_template("teachers_edit.html", teacher=teacher, history=history, employment_history=employment_history)
 
 
 @app.get("/export.xlsx")
