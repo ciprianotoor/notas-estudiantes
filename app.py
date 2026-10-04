@@ -1261,7 +1261,7 @@ def index():
                 ("Asignar docentes", "Docente guía responsable", connection.execute("SELECT COUNT(*) AS n FROM groups WHERE teacher_id IS NOT NULL").fetchone()["n"] > 0, "academic_structure"),
                 ("Registrar estudiantes", "Matrículas activas", connection.execute("SELECT COUNT(*) AS n FROM students WHERE enrollment_status='active'").fetchone()["n"] > 0, "students"),
             ]
-        setup = {"pending": [{"step": i + 1, "label": label, "detail": detail, "done": done, "url": url_for(target)} for i, (label, detail, done, target) in enumerate(checks)]}
+        setup = {"level": setup_level(), "pending": [{"step": i + 1, "label": label, "detail": detail, "done": done, "url": url_for(target)} for i, (label, detail, done, target) in enumerate(checks)]}
     summaries = [(student, summary(student)[1]) for student in students]
     values = [final for _, final in summaries if final is not None]
     if teacher_is_secretary(teacher_id):
