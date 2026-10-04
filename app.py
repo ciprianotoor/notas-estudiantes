@@ -1954,7 +1954,11 @@ def academic_structure():
         kind = request.form.get('kind')
         try:
             with db() as connection:
-                if kind == 'year':
+                if kind == 'structure':
+                    year_cursor = connection.execute('INSERT INTO academic_years(year,start_date,end_date,status) VALUES(?,?,?,?)', (int(request.form['year']), request.form.get('start_date',''), request.form.get('end_date',''), request.form.get('status','open')))
+                    grade_cursor = connection.execute('INSERT INTO grades(name,code,level) VALUES(?,?,?)', (request.form['grade_name'].strip(), request.form['grade_code'].strip(), request.form.get('level','').strip()))
+                    connection.execute('INSERT INTO sections(academic_year_id,grade_id,name,shift,teacher_guide_id) VALUES(?,?,?,?,?)', (year_cursor.lastrowid, grade_cursor.lastrowid, request.form['section_name'].strip(), request.form.get('shift','').strip(), request.form.get('teacher_guide_id') or None))
+                elif kind == 'year':
                     connection.execute('INSERT INTO academic_years(year,start_date,end_date,status) VALUES(?,?,?,?)', (int(request.form['year']), request.form.get('start_date',''), request.form.get('end_date',''), request.form.get('status','open')))
                 elif kind == 'grade':
                     connection.execute('INSERT INTO grades(name,code,level) VALUES(?,?,?)', (request.form['name'].strip(), request.form['code'].strip(), request.form.get('level','').strip()))
@@ -1971,7 +1975,7 @@ def academic_structure():
         grades = connection.execute('SELECT * FROM grades WHERE active=1 ORDER BY name').fetchall()
         guides = connection.execute('SELECT id,name FROM teachers WHERE is_admin=0 ORDER BY name').fetchall()
         sections = connection.execute('SELECT s.*, ay.year, g.name AS grade_name, t.name AS guide_name FROM sections s JOIN academic_years ay ON ay.id=s.academic_year_id JOIN grades g ON g.id=s.grade_id LEFT JOIN teachers t ON t.id=s.teacher_guide_id WHERE s.active=1 ORDER BY ay.year DESC, g.name, s.name').fetchall()
-    return render_template('academic_structure_v3.html', years=years, grades=grades, guides=guides, sections=sections)
+    return render_template('academic_structure_v4.html', years=years, grades=grades, guides=guides, sections=sections)
 
 
 @app.get('/academic-structure/mined-reference')
