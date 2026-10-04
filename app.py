@@ -1991,9 +1991,9 @@ def grades(student_id):
                 conduct_score = float(request.form.get("conduct_score", ""))
             except (TypeError, ValueError):
                 conduct_score = None
-            conduct_qualitative = request.form.get("conduct_qualitative", "").strip()
-            if conduct_score is None or not 0 <= conduct_score <= 100 or not conduct_qualitative:
-                flash("Conducta requiere calificación cuantitativa y cualitativa.", "error")
+            conduct_qualitative = qualitative_learning_label(conduct_score) if conduct_score is not None and 0 <= conduct_score <= 100 else ""
+            if conduct_score is None or not 0 <= conduct_score <= 100:
+                flash("La calificación cuantitativa de conducta debe estar entre 0 y 100.", "error")
             else:
                 with db() as connection:
                     connection.execute("""INSERT INTO conduct_evaluations(student_id,partial,quantitative,qualitative,criteria,incidents,observations)
