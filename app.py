@@ -1059,6 +1059,8 @@ def delete_group(group_id):
 @director_or_admin_required
 @workflow_required(1)
 def subjects_view():
+    if teacher_is_admin(session.get('teacher_id')):
+        return redirect(url_for('subject_catalog'))
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         grade = request.form.get("grade", "").strip()
