@@ -35,5 +35,8 @@ document.querySelectorAll('input[name="conduct_score"]').forEach(function(score)
   score.addEventListener('input', updateConductLabel);
   updateConductLabel();
 });
+document.querySelectorAll('textarea[name="conduct_criteria"]').forEach(function(field) {
+  field.placeholder = 'Relaciones interpersonales; responsabilidad individual y compartida; participación en actividades extracurriculares; solidaridad y colaboración; asistencia y puntualidad; orden y aseo. Registra evidencias observables del corte.';
+});
 </script>
 {% endblock %}
