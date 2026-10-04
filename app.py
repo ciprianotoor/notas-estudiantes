@@ -411,6 +411,7 @@ def init_db():
             ('LE', 'Lengua Extranjera', 'Comunicativa'),
             ('EF', 'Educación Física y Práctica Deportiva', 'Desarrollo personal'),
             ('CV', 'Creciendo en Valores', 'Formación ciudadana'),
+            ('AEP', 'Educación para Aprender, Emprender y Prosperar', 'Emprendimiento'),
             ('TAC', 'Talleres de Arte y Cultura', 'Arte y cultura'),
         ]
         for code, name, area in default_subjects:
