@@ -608,6 +608,21 @@ def qualitative_learning_label(value):
     return "AI"
 
 
+def mined_subject_order(name):
+    """Orden de boleta basado en las áreas/asignaturas del plan MINED."""
+    normalized = " ".join((name or "").lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u").split())
+    order = (
+        "conducta", "creciendo en valores", "derecho y dignidad", "educacion para aprender",
+        "educacion para aprender, emprender y prosperar", "estudios sociales", "educacion fisica",
+        "lengua y literatura", "lengua extranjera", "ingles", "talleres de arte", "matematica",
+        "ciencias naturales", "quimica", "fisica", "biologia", "conociendo mi mundo",
+    )
+    for index, prefix in enumerate(order):
+        if normalized.startswith(prefix):
+            return (index, normalized)
+    return (len(order), normalized)
+
+
 def grade_value(row):
     return round(sum(float(row[f"work{i}"] or 0) for i in range(1, 7)) + float(row["exam"] or 0), 2)
 
@@ -3092,7 +3107,7 @@ def make_pdf(student_ids, selected_partials):
         selected_total = 0.0
         # La boleta debe incluir todo el catálogo de asignaturas, aunque aún
         # no existan registros de calificación para el estudiante.
-        subject_ids = sorted(set(subject_names) | set(partials_by_subject), key=lambda sid: subject_names.get(sid, "General").lower())
+        subject_ids = sorted(set(subject_names) | set(partials_by_subject), key=lambda sid: mined_subject_order(subject_names.get(sid, "General")))
         for sid in subject_ids:
             subject_data = partials_by_subject.get(sid, {"partials": {}})
             subject_name = subject_names.get(sid, "General") if sid else "General"
