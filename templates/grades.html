@@ -39,5 +39,21 @@ document.querySelectorAll('textarea[name="conduct_criteria"]').forEach(function(
   field.placeholder = 'Relaciones interpersonales; responsabilidad individual y compartida; participación en actividades extracurriculares; solidaridad y colaboración; asistencia y puntualidad; orden y aseo. Registra evidencias observables del corte.';
 });
 document.querySelectorAll('.conduct-card').forEach(function(card) { card.remove(); });
+document.querySelectorAll('.conduct-subject-card > form').forEach(function(form) {
+  var title = form.querySelector('h3');
+  var details = document.createElement('details');
+  details.className = 'partial-card conduct-partial-card';
+  var summary = document.createElement('summary');
+  summary.innerHTML = '<span>' + (title ? title.textContent : 'Parcial') + '</span><strong>Evaluar conducta</strong>';
+  if (title) title.remove();
+  details.appendChild(summary);
+  details.appendChild(form);
+  form.classList.remove('card');
+  form.style.margin = '0';
+  form.style.borderTop = '1px solid #eaecf0';
+  form.style.borderRadius = '0';
+  form.style.boxShadow = 'none';
+  document.querySelector('.conduct-subject-card').appendChild(details);
+});
 </script>
 {% endblock %}
