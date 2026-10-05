@@ -612,10 +612,11 @@ def mined_subject_order(name):
     """Orden de boleta basado en las áreas/asignaturas del plan MINED."""
     normalized = " ".join((name or "").lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u").split())
     order = (
-        "conducta", "creciendo en valores", "derecho y dignidad", "educacion para aprender",
-        "educacion para aprender, emprender y prosperar", "estudios sociales", "educacion fisica",
-        "lengua y literatura", "lengua extranjera", "ingles", "talleres de arte", "matematica",
-        "ciencias naturales", "quimica", "fisica", "biologia", "conociendo mi mundo",
+        "lengua y literatura", "matematica", "ciencias naturales", "estudios sociales",
+        "derechos y dignidad", "creciendo en valores", "educacion para aprender",
+        "educacion para aprender, emprender y prosperar", "educacion fisica", "talleres de arte",
+        "lengua extranjera", "ingles", "conducta", "quimica", "fisica", "biologia",
+        "conociendo mi mundo",
     )
     for index, prefix in enumerate(order):
         if normalized.startswith(prefix):
