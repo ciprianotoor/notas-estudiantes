@@ -1745,10 +1745,11 @@ def students():
     filter_group = request.args.get("group_id", type=int)
     is_guide = is_guide_teacher(teacher_id)
     is_admin = teacher_is_admin(teacher_id)
+    is_director = teacher_is_director(teacher_id)
     is_secretary = teacher_is_secretary(teacher_id)
     can_withdraw = is_guide or is_admin or teacher_is_director(teacher_id)
     with db() as connection:
-        if is_admin or is_secretary:
+        if is_admin or is_secretary or is_director:
             query = """SELECT s.*, g.name AS group_name, MIN(sc.class_id) AS class_id,
                 GROUP_CONCAT(DISTINCT c.name) AS class_name,
                 GROUP_CONCAT(DISTINCT subj.name) AS enrolled_subjects,
@@ -1805,13 +1806,13 @@ def students():
             query += " AND NOT EXISTS (SELECT 1 FROM partial_grades fpg WHERE fpg.student_id=s.id)"
         query += " GROUP BY s.id ORDER BY s.name"
         rows = connection.execute(query, params).fetchall()
-        group_rows = connection.execute("SELECT * FROM groups ORDER BY name" if is_admin or is_secretary else "SELECT * FROM groups WHERE teacher_id=? ORDER BY name", (() if is_admin or is_secretary else (teacher_id,))).fetchall()
+        group_rows = connection.execute("SELECT * FROM groups ORDER BY name" if is_admin or is_secretary or is_director else "SELECT * FROM groups WHERE teacher_id=? ORDER BY name", (() if is_admin or is_secretary or is_director else (teacher_id,))).fetchall()
         if is_guide:
             class_rows = connection.execute("""SELECT c.*, s.name AS subject_name, t.name AS teacher_name
                 FROM classes c LEFT JOIN subjects s ON s.id=c.subject_id
                 LEFT JOIN teachers t ON t.id=c.teacher_id
                 JOIN groups g ON g.id=c.group_id AND g.teacher_id=? ORDER BY c.name""", (teacher_id,)).fetchall()
-        elif is_admin or is_secretary:
+        elif is_admin or is_secretary or is_director:
             class_rows = connection.execute("""SELECT c.*, s.name AS subject_name, t.name AS teacher_name
                 FROM classes c LEFT JOIN subjects s ON s.id=c.subject_id
                 LEFT JOIN teachers t ON t.id=c.teacher_id ORDER BY c.name""").fetchall()
@@ -1820,7 +1821,7 @@ def students():
                 FROM classes c LEFT JOIN subjects s ON s.id=c.subject_id
                 LEFT JOIN teachers t ON t.id=c.teacher_id
                 WHERE c.teacher_id=? ORDER BY c.name""", (teacher_id,)).fetchall()
-    return render_template("students.html", students=rows, groups=group_rows, classes=class_rows, search=search, subject_search=subject_search, record_filter=record_filter, status_filter=status_filter, filter_group=filter_group, is_guide=is_guide, is_admin=is_admin, is_director=teacher_is_director(teacher_id), is_secretary=is_secretary, can_withdraw=can_withdraw, read_only=is_admin or is_secretary)
+    return render_template("students.html", students=rows, groups=group_rows, classes=class_rows, search=search, subject_search=subject_search, record_filter=record_filter, status_filter=status_filter, filter_group=filter_group, is_guide=is_guide, is_admin=is_admin, is_director=is_director, is_secretary=is_secretary, can_withdraw=can_withdraw, read_only=is_admin or is_secretary or is_director)
 
 
 @app.post("/students/<int:student_id>/delete")
