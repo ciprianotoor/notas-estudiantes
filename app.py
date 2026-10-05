@@ -3055,6 +3055,9 @@ def make_pdf(student_ids, selected_partials):
     teacher_id = session.get("teacher_id")
     if not student_ids or any(not teacher_can_access_student(student_id, teacher_id) for student_id in student_ids):
         return "Estudiante no encontrado", 404
+    # Asegura que las asignaturas nuevas del catálogo/clases existan también
+    # en la fuente que usa la boleta, aunque aún no tengan calificaciones.
+    sync_approved_subjects()
     with db() as connection:
         placeholders = ",".join("?" for _ in student_ids)
         students = connection.execute(
