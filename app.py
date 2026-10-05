@@ -810,6 +810,8 @@ def teacher_can_access_student(student_id, teacher_id=None):
         return False
     if teacher_is_admin(teacher_id):
         return True
+    if teacher_is_director(teacher_id):
+        return True
     if teacher_is_secretary(teacher_id):
         with db() as connection:
             return bool(connection.execute("SELECT 1 FROM students WHERE id=?", (student_id,)).fetchone())
