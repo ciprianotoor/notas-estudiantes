@@ -1940,7 +1940,7 @@ def export_student_record(student_id):
     for row in grades:
         writer.writerow(["Nota", row["subject_name"] or "", partial_name(row["partial"]), grade_value(row), "", row["comments"] or ""])
     for row in conduct:
-        writer.writerow(["Conducta", "Conducta", partial_name(row["partial"]), row["quantitative"] or "", row["qualitative"] or "", f"Criterios: {row['criteria'] or ''}; Incidentes: {row['incidents'] or ''}; Observaciones: {row['observations'] or ''}"])
+        writer.writerow(["Conducta", "Conducta", partial_name(row["partial"]), row["quantitative"] or "", qualitative_learning_label(row["quantitative"]) if row["quantitative"] is not None else "", f"Criterios: {row['criteria'] or ''}; Incidentes: {row['incidents'] or ''}; Observaciones: {row['observations'] or ''}"])
     response = make_response(output.getvalue())
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     response.headers["Content-Disposition"] = f"attachment; filename=expediente-{student['code']}.csv"
@@ -3067,7 +3067,8 @@ def make_pdf(student_ids, selected_partials):
         conduct_entries = conduct_by_student.get(student["id"], {})
         if not conduct_entries and student["conduct_score"] is not None:
             conduct_entries[1] = {"quantitative": student["conduct_score"], "qualitative": student["conduct"] or "Sin registrar", "criteria": student["conduct_criteria"], "incidents": student["conduct_incidents"], "observations": student["observations"]}
-        conduct_label = conduct_entries.get(1, {}).get("qualitative") or student["conduct"] or "Sin registrar"
+        first_conduct = conduct_entries.get(1, {})
+        conduct_label = qualitative_learning_label(first_conduct.get("quantitative")) if first_conduct.get("quantitative") is not None else (student["conduct"] or "Sin registrar")
         conduct_quantitative = f"{conduct_entries.get(1, {}).get('quantitative', student['conduct_score']):.2f} / 100" if conduct_entries.get(1, {}).get('quantitative', student['conduct_score']) is not None else "Sin registrar"
         conduct_data = [["Parcial", "Cuantitativa", "Cualitativa", "Criterios utilizados", "Incidentes registrados", "Observaciones"]]
         for partial in range(1, 5):
@@ -3075,7 +3076,7 @@ def make_pdf(student_ids, selected_partials):
             conduct_data.append([
                 partial_name(partial),
                 f"{entry['quantitative']:.2f} / 100" if entry.get("quantitative") is not None else "Sin calificación",
-                entry.get("qualitative") or "Sin valoración",
+                qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración",
                 entry.get("criteria") or "Sin registrar",
                 entry.get("incidents") or "Ninguno registrado",
                 entry.get("observations") or "Sin observaciones",
@@ -3126,7 +3127,7 @@ def make_pdf(student_ids, selected_partials):
         for partial in range(1, 5):
             entry = conduct_entries.get(partial, {})
             conduct_quantitative_short = f"{entry['quantitative']:.2f}" if entry.get("quantitative") is not None else "Sin calificación"
-            conduct_row.extend([conduct_quantitative_short, entry.get("qualitative") or "Sin valoración"])
+            conduct_row.extend([conduct_quantitative_short, qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración"])
         final_conduct = conduct_entries.get(4) or conduct_entries.get(1) or {}
         conduct_row.extend(["-", final_conduct.get("qualitative") or "-"])
         summary_data.append(conduct_row)
