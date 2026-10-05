@@ -906,8 +906,10 @@ def get_teacher_subjects_for_student(student_id, teacher_id=None):
                     JOIN classes c ON c.id=sc.class_id
                     WHERE sc.student_id=? AND c.subject_id=s.id
                 )
-                ORDER BY s.name
+            ORDER BY s.name
             """, (student_id, student_id)).fetchall()
+        if teacher_is_director(teacher_id):
+            return connection.execute("SELECT * FROM subjects ORDER BY name").fetchall()
         if get_teacher_role(teacher_id) in ("guide", "teacher"):
             return connection.execute("""
                 SELECT DISTINCT s.*
@@ -940,6 +942,8 @@ def teacher_can_access_subject_for_student(student_id, subject_id, teacher_id=No
     if not teacher_id or not teacher_can_access_student(student_id, teacher_id):
         return False
     if teacher_is_admin(teacher_id):
+        return True
+    if teacher_is_director(teacher_id):
         return True
     if teacher_is_secretary(teacher_id):
         return any(
@@ -2038,7 +2042,7 @@ def grades(student_id):
         selected_subject_id = request.args.get("subject_id", type=int)
         if request.method == "POST":
             selected_subject_id = request.form.get("subject_id", type=int)
-        if not subjects and not is_secretary and not teacher_is_admin(teacher_id):
+        if not subjects and not is_secretary and not teacher_is_admin(teacher_id) and not teacher_is_director(teacher_id):
             flash("Este estudiante no tiene materias asignadas a tu docente mediante una clase.", "error")
             destination = "groups" if is_guide_teacher(teacher_id) else "subjects_view"
             return redirect(url_for(destination))
@@ -2117,7 +2121,7 @@ def grades(student_id):
             WHERE ga.student_id=? ORDER BY ga.created_at DESC, ga.id DESC LIMIT 30
         """, (student_id,)).fetchall()
     selected_subject_name = next((row["name"] for row in subjects if row["id"] == selected_subject_id), "")
-    return render_template("grades.html", student=student, partials=partials, final=final, history=history, subjects=subjects, current_subject_id=selected_subject_id, selected_subject_name=selected_subject_name, is_conduct=selected_subject_name.strip().lower() == "conducta", is_guide=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), is_secretary=teacher_is_secretary(teacher_id), can_edit_grades=can_edit_grades)
+    return render_template("grades.html", student=student, partials=partials, final=final, history=history, subjects=subjects, current_subject_id=selected_subject_id, selected_subject_name=selected_subject_name, is_conduct=selected_subject_name.strip().lower() == "conducta", is_guide=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), is_director=teacher_is_director(teacher_id), is_secretary=teacher_is_secretary(teacher_id), can_edit_grades=can_edit_grades)
 
 
 @app.post("/students/<int:student_id>/profile")
