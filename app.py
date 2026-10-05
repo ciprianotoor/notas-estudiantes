@@ -2237,6 +2237,17 @@ def config():
     return render_template("settings.html", current=settings())
 
 
+@app.post("/theme-toggle")
+@teacher_required
+def theme_toggle():
+    theme = request.form.get("theme", "light").strip().lower()
+    if theme not in ("light", "dark"):
+        theme = "light"
+    with db() as connection:
+        connection.execute("UPDATE teacher_settings SET theme=? WHERE teacher_id=?", (theme, session.get("teacher_id")))
+    return redirect(request.referrer or url_for("index"))
+
+
 @app.get("/school-logo")
 def school_logo():
     current = settings()
