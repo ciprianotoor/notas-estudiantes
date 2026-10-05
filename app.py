@@ -2825,31 +2825,43 @@ def statistics():
 @report_access_required
 def print_reports():
     teacher_id = session.get("teacher_id")
+    search = request.args.get("q", "").strip()
+    filter_group = request.args.get("group_id", type=int)
     with db() as connection:
         if teacher_is_admin(teacher_id) or teacher_is_secretary(teacher_id):
-            students = connection.execute("""
+            query = """
                 SELECT s.*, g.name AS group_name FROM students s
                 LEFT JOIN groups g ON g.id=s.group_id
-                ORDER BY g.name, s.name
-            """).fetchall()
+                WHERE 1=1
+            """
+            params = []
         elif get_teacher_role(teacher_id) == "guide":
-            students = connection.execute("""
+            query = """
                 SELECT s.*, g.name AS group_name FROM students s
                 LEFT JOIN groups g ON g.id=s.group_id
                 WHERE g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?)
-                ORDER BY g.name, s.name
-            """, (teacher_id, teacher_id)).fetchall()
+            """
+            params = [teacher_id, teacher_id]
         else:
-            students = connection.execute("""
+            query = """
                 SELECT DISTINCT s.*, g.name AS group_name
                 FROM students s
                 LEFT JOIN groups g ON g.id=s.group_id
                 LEFT JOIN student_classes sc ON sc.student_id=s.id
                 LEFT JOIN classes c ON c.id=sc.class_id
                 WHERE s.teacher_id=? OR c.teacher_id=?
-                ORDER BY g.name, s.name
-            """, (teacher_id, teacher_id)).fetchall()
-    return render_template("print_reports.html", students=students)
+            """
+            params = [teacher_id, teacher_id]
+        query += " AND (s.name LIKE ? OR s.code LIKE ?)" if search else ""
+        if search:
+            params.extend([f"%{search}%", f"%{search}%"])
+        if filter_group:
+            query += " AND s.group_id=?"
+            params.append(filter_group)
+        query += " ORDER BY g.name, s.name"
+        students = connection.execute(query, params).fetchall()
+        groups = connection.execute("SELECT id,name FROM groups ORDER BY name").fetchall()
+    return render_template("print_reports.html", students=students, groups=groups, search=search, filter_group=filter_group)
 
 
 def requested_partials(source):
