@@ -7,6 +7,35 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app as app_module
 
 
+def test_settings_fallback_uses_teacher_name_when_teacher_settings_are_missing(tmp_path, monkeypatch):
+    db_path = tmp_path / "notas.db"
+    upload_dir = tmp_path / "uploads"
+
+    monkeypatch.setenv("DB_PATH", str(db_path))
+    monkeypatch.setenv("UPLOAD_DIR", str(upload_dir))
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+
+    importlib.reload(app_module)
+
+    with app_module.db() as connection:
+        admin = connection.execute(
+            "SELECT id FROM teachers WHERE is_admin=1 ORDER BY id LIMIT 1"
+        ).fetchone()
+        connection.execute(
+            "INSERT INTO teachers(name,email,password,is_admin) VALUES(?,?,?,0)",
+            ("Docente asignado", "docente@test", "pass"),
+        )
+        teacher = connection.execute(
+            "SELECT id FROM teachers WHERE email=?", ("docente@test",)
+        ).fetchone()
+
+    teacher_settings = app_module.settings(teacher["id"])
+
+    assert teacher_settings["teacher_name"] == "Docente asignado"
+    assert teacher_settings["school_name"] == "Colegio"
+    assert teacher_settings["teacher_name"] != app_module.settings(admin["id"])["teacher_name"]
+
+
 def test_student_enrollment_lists_same_grade_classes_even_when_group_has_none(tmp_path, monkeypatch):
     db_path = tmp_path / "notas.db"
     upload_dir = tmp_path / "uploads"

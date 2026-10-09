@@ -587,7 +587,14 @@ def settings(teacher_id=None):
                     values["logo_filename"] = admin_row["logo_filename"]
                     values["theme"] = admin_row["theme"]
                 return values
-        return admin_row or connection.execute("SELECT * FROM teacher_settings ORDER BY id LIMIT 1").fetchone()
+        fallback = admin_row or connection.execute("SELECT * FROM teacher_settings ORDER BY id LIMIT 1").fetchone()
+        if teacher_id and fallback:
+            teacher = connection.execute("SELECT name FROM teachers WHERE id=?", (teacher_id,)).fetchone()
+            if teacher:
+                values = dict(fallback)
+                values["teacher_name"] = teacher["name"]
+                return values
+        return fallback
 
 
 def partial_name(partial):
