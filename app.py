@@ -570,9 +570,9 @@ def init_db():
             )
 
 
-def settings():
+def settings(teacher_id=None):
     with db() as connection:
-        teacher_id = session.get("teacher_id")
+        teacher_id = teacher_id or session.get("teacher_id")
         admin_row = connection.execute("""
             SELECT ts.* FROM teacher_settings ts
             JOIN teachers t ON t.id=ts.teacher_id
@@ -3061,7 +3061,7 @@ def make_pdf(student_ids, selected_partials):
     with db() as connection:
         placeholders = ",".join("?" for _ in student_ids)
         students = connection.execute(
-            f"SELECT s.*, g.name AS group_name FROM students s LEFT JOIN groups g ON g.id=s.group_id WHERE s.id IN ({placeholders}) ORDER BY s.name",
+            f"SELECT s.*, g.name AS group_name, g.teacher_id AS group_teacher_id FROM students s LEFT JOIN groups g ON g.id=s.group_id WHERE s.id IN ({placeholders}) ORDER BY s.name",
             tuple(student_ids)).fetchall()
         subject_rows = connection.execute("SELECT id, name FROM subjects").fetchall()
         conduct_rows = connection.execute("SELECT * FROM conduct_evaluations WHERE student_id IN ({})".format(placeholders), tuple(student_ids)).fetchall()
@@ -3070,13 +3070,15 @@ def make_pdf(student_ids, selected_partials):
     conduct_by_student = {}
     for row in conduct_rows:
         conduct_by_student.setdefault(row["student_id"], {})[row["partial"]] = dict(row)
-    current = settings(); output = io.BytesIO()
+    fallback_settings = settings(); output = io.BytesIO()
     document = SimpleDocTemplate(output, pagesize=landscape(letter), rightMargin=.45*inch, leftMargin=.45*inch, topMargin=.4*inch, bottomMargin=.4*inch)
     styles = getSampleStyleSheet(); center_style = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER); story = []
-    logo_path = os.path.join(UPLOAD_DIR, current["logo_filename"]) if current["logo_filename"] else ""
     header_style = TableStyle([("BACKGROUND", (0,0), (-1,0), "#17365d"), ("TEXTCOLOR", (0,0), (-1,0), "white"), ("GRID", (0,0), (-1,-1), .5, "#b7c3d0"), ("ALIGN", (0,0), (-1,0), "LEFT"), ("ALIGN", (1,1), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("FONTSIZE", (0,0), (-1,-1), 8), ("PADDING", (0,0), (-1,-1), 5)])
     for index, student in enumerate(students):
         if index: story.append(PageBreak())
+        # La boleta identifica al docente guía del grupo, no al usuario que la imprime.
+        current = settings(student["group_teacher_id"]) if student["group_teacher_id"] else fallback_settings
+        logo_path = os.path.join(UPLOAD_DIR, current["logo_filename"]) if current["logo_filename"] else ""
         partials_by_subject, total = summary(student)
         if logo_path and os.path.isfile(logo_path): story.append(PDFImage(logo_path, width=.65*inch, height=.65*inch))
         subject_names_list = sorted({subject_names.get(sid, "General") if sid else "General" for sid in partials_by_subject.keys()})
