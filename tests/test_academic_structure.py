@@ -988,6 +988,171 @@ def test_fixed_director_and_secretary_roles_are_read_only_for_grades(tmp_path, m
 
     report_list = client.get("/print-reports")
     assert "Estudiante para boleta" in report_list.get_data(as_text=True)
-    pdf = client.get(f"/reports/{student['id']}/pdf")
+    options = client.get(f"/reports/{student['id']}/pdf")
+    assert options.status_code == 200
+    options_html = options.get_data(as_text=True)
+    assert "Opciones de boleta" in options_html
+    assert 'name="class_filter" value="1"' in options_html
+    assert "Seleccionar todos" in options_html
+    assert 'data-selection-group="partial"' in options_html
+    pdf = client.post(
+        f"/reports/{student['id']}/pdf",
+        data={"partial_filter": "1", "partial": "1"},
+    )
     assert pdf.status_code == 200
     assert pdf.mimetype == "application/pdf"
+
+
+def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, monkeypatch):
+    db_path = tmp_path / "notas.db"
+    upload_dir = tmp_path / "uploads"
+    monkeypatch.setenv("DB_PATH", str(db_path))
+    monkeypatch.setenv("UPLOAD_DIR", str(upload_dir))
+    monkeypatch.setenv("SECRET_KEY", "test-secret")
+    importlib.reload(app_module)
+
+    with app_module.db() as connection:
+        admin = connection.execute(
+            "SELECT id FROM teachers WHERE is_admin=1 ORDER BY id LIMIT 1"
+        ).fetchone()
+        connection.execute(
+            "INSERT INTO groups(name,grade,section,academic_year,teacher_id) VALUES(?,?,?,?,?)",
+            ("7mo A", "7mo", "A", 2026, admin["id"]),
+        )
+        group = connection.execute("SELECT id FROM groups WHERE name='7mo A'").fetchone()
+        connection.execute(
+            "INSERT INTO students(code,name,section,group_id,teacher_id) VALUES(?,?,?,?,?)",
+            ("S-PRINT", "Estudiante de impresión", "A", group["id"], admin["id"]),
+        )
+        student = connection.execute(
+            "SELECT id FROM students WHERE code='S-PRINT'"
+        ).fetchone()
+
+        class_ids = {}
+        subject_ids = {}
+        for subject_name in ("Matemática", "Biología"):
+            connection.execute(
+                "INSERT INTO subjects(name,grade,year,created_by) VALUES(?,?,?,?)",
+                (subject_name, "7mo", 2026, admin["id"]),
+            )
+            subject_ids[subject_name] = connection.execute(
+                "SELECT id FROM subjects WHERE name=?",
+                (subject_name,),
+            ).fetchone()["id"]
+            connection.execute(
+                "INSERT INTO classes(name,subject_id,grade,year,section,group_id,teacher_id) VALUES(?,?,?,?,?,?,?)",
+                (f"{subject_name} 7mo A", subject_ids[subject_name], "7mo", 2026, "A", group["id"], admin["id"]),
+            )
+            class_ids[subject_name] = connection.execute(
+                "SELECT last_insert_rowid() AS id"
+            ).fetchone()["id"]
+            connection.execute(
+                "INSERT INTO student_classes(student_id,class_id) VALUES(?,?)",
+                (student["id"], class_ids[subject_name]),
+            )
+            for partial in (1, 2):
+                connection.execute(
+                    "INSERT INTO partial_grades(student_id,subject_id,partial,work1,exam) VALUES(?,?,?,?,?)",
+                    (student["id"], subject_ids[subject_name], partial, 8, 30),
+                )
+
+    client = app_module.app.test_client()
+    with client.session_transaction() as session:
+        session["role"] = "teacher"
+        session["teacher_id"] = admin["id"]
+
+    page = client.get("/print-reports")
+    page_html = page.get_data(as_text=True)
+    assert page.status_code == 200
+    assert "Matemática 7mo A" in page_html
+    assert "Biología 7mo A" in page_html
+    individual_options = client.get(f"/reports/{student['id']}/pdf")
+    individual_html = individual_options.get_data(as_text=True)
+    assert individual_options.status_code == 200
+    assert "Matemática 7mo A" in individual_html
+    assert "Biología 7mo A" in individual_html
+    assert "Deseleccionar todos" in individual_html
+
+    captured = {}
+    original_build = app_module.SimpleDocTemplate.build
+
+    def capture_build(document, story):
+        captured["tables"] = [
+            flowable for flowable in story if isinstance(flowable, app_module.Table)
+        ]
+        return original_build(document, story)
+
+    monkeypatch.setattr(app_module.SimpleDocTemplate, "build", capture_build)
+    response = client.post(
+        "/reports/pdf",
+        data={
+            "student_id": str(student["id"]),
+            "class_filter": "1",
+            "class_id": str(class_ids["Matemática"]),
+            "partial_filter": "1",
+            "partial": "1",
+        },
+    )
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+
+    summary_table = next(
+        table for table in captured["tables"]
+        if table._cellvalues[0][0] == "Asignatura / componente"
+    )
+    summary_rows = summary_table._cellvalues
+    assert summary_rows[0][1] == "Parcial I"
+    assert summary_rows[0][3] == "Promedio incluido"
+    assert any(row[0] == "Matemática" for row in summary_rows[2:])
+    assert not any(row[0] == "Biología" for row in summary_rows[2:])
+
+    conduct_table = next(
+        table for table in captured["tables"]
+        if table._cellvalues[0][0] == "Parcial"
+    )
+    assert len(conduct_table._cellvalues) == 2
+    assert conduct_table._cellvalues[1][0] == "Parcial I"
+
+    individual_response = client.post(
+        f"/reports/{student['id']}/pdf",
+        data={
+            "class_filter": "1",
+            "class_id": str(class_ids["Biología"]),
+            "partial_filter": "1",
+            "partial": "2",
+        },
+    )
+    assert individual_response.status_code == 200
+    individual_summary = next(
+        table for table in captured["tables"]
+        if table._cellvalues[0][0] == "Asignatura / componente"
+    )
+    individual_rows = individual_summary._cellvalues
+    assert individual_rows[0][1] == "Parcial II"
+    assert any(row[0] == "Biología" for row in individual_rows[2:])
+    assert not any(row[0] == "Matemática" for row in individual_rows[2:])
+
+    empty_selection_response = client.post(
+        f"/reports/{student['id']}/pdf",
+        data={"class_filter": "1", "partial_filter": "1"},
+    )
+    assert empty_selection_response.status_code == 200
+    empty_summary = next(
+        table for table in captured["tables"]
+        if table._cellvalues[0][0] == "Asignatura / componente"
+    )
+    empty_rows = empty_summary._cellvalues
+    assert empty_rows[0][1] == "Promedio incluido"
+    assert not any(row[0] in ("Matemática", "Biología") for row in empty_rows[2:])
+    assert len(empty_rows[0]) == 3
+
+    batch_empty_response = client.post(
+        "/reports/pdf",
+        data={
+            "student_id": str(student["id"]),
+            "class_filter": "1",
+            "partial_filter": "1",
+        },
+    )
+    assert batch_empty_response.status_code == 200
+    assert "Seleccionar todos" in page_html

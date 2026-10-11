@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Opciones de boleta{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <p class="eyebrow">IMPRESIÓN DE BOLETA</p>
+  <h1>Opciones de boleta</h1>
+  <p class="muted">{{ student.name }} · Código: {{ student.code }} · Grupo: {{ student.group_name or 'Sin grupo' }}</p>
+</div>
+<div class="card">
+  <form method="post" action="{{ url_for('teacher_student_pdf', student_id=student.id) }}">
+    <p class="muted">Elige qué clases y parciales quieres incluir en la boleta.</p>
+    <input type="hidden" name="class_filter" value="1">
+    {% if class_options %}
+    <h2>Clases</h2>
+    <button type="button" class="secondary selection-toggle" data-selection-group="class_id">Deseleccionar todas</button>
+    <div class="selection-list">
+      {% for class in class_options %}
+      <label><input type="checkbox" name="class_id" value="{{ class.id }}" checked>
+        {{ class.subject_name }} — {{ class.class_name }}{% if class.group_name %} ({{ class.group_name }}){% elif class.grade or class.section %} ({{ class.grade }}{% if class.section %} {{ class.section }}{% endif %}){% endif %}
+      </label>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">Este estudiante no tiene clases asignadas para filtrar.</p>
+    {% endif %}
+    <input type="hidden" name="partial_filter" value="1">
+    <h2>Parciales</h2>
+    <button type="button" class="secondary selection-toggle" data-selection-group="partial">Deseleccionar todos</button>
+    <div class="selection-list">
+      {% for partial in range(1, 5) %}
+      <label><input type="checkbox" name="partial" value="{{ partial }}" checked>
+        {{ partial_name(partial) }}
+      </label>
+      {% endfor %}
+    </div>
+    <div class="actions">
+      <button type="submit">Generar boleta PDF</button>
+      <a class="button secondary" href="{{ url_for('grades', student_id=student.id) }}">Cancelar</a>
+    </div>
+  </form>
+</div>
+<style>
+.selection-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.65rem;margin:1rem 0 1.5rem}
+.selection-list label{display:flex;align-items:center;gap:.55rem;padding:.75rem;background:#f8fafc;border:1px solid #eaecf0;border-radius:8px}
+.selection-list input{width:auto;margin:0}
+.actions{margin-top:1.25rem}
+.selection-toggle{width:auto;margin:.25rem 0}
+</style>
+<script>
+document.querySelectorAll('.selection-toggle').forEach(function(button) {
+  var form = button.closest('form');
+  var checkboxes = form.querySelectorAll('input[name="' + button.dataset.selectionGroup + '"]');
+  function updateLabel() {
+    var allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(function(input) { return input.checked; });
+    button.textContent = allChecked ? 'Deseleccionar todos' : 'Seleccionar todos';
+  }
+  button.addEventListener('click', function() {
+    var selectAll = button.textContent === 'Seleccionar todos';
+    checkboxes.forEach(function(input) { input.checked = selectAll; });
+    updateLabel();
+  });
+  checkboxes.forEach(function(input) { input.addEventListener('change', updateLabel); });
+  updateLabel();
+});
+</script>
+{% endblock %}

@@ -2884,10 +2884,33 @@ def print_reports():
         query += " ORDER BY g.name, s.name"
         students = connection.execute(query, params).fetchall()
         groups = connection.execute("SELECT id,name FROM groups ORDER BY name").fetchall()
-    return render_template("print_reports.html", students=students, groups=groups, search=search, filter_group=filter_group)
+        class_options = []
+        if students:
+            student_placeholders = ",".join("?" for _ in students)
+            class_options = connection.execute(
+                f"""
+                SELECT DISTINCT c.id, c.name AS class_name, s.name AS subject_name,
+                       g.name AS group_name, c.grade, c.section
+                FROM student_classes sc
+                JOIN classes c ON c.id=sc.class_id
+                JOIN subjects s ON s.id=c.subject_id
+                LEFT JOIN groups g ON g.id=c.group_id
+                WHERE sc.student_id IN ({student_placeholders})
+                ORDER BY s.name, g.name, c.grade, c.section, c.name
+                """,
+                tuple(student["id"] for student in students),
+            ).fetchall()
+    return render_template(
+        "print_reports.html",
+        students=students,
+        groups=groups,
+        class_options=class_options,
+        search=search,
+        filter_group=filter_group,
+    )
 
 
-def requested_partials(source):
+def requested_partials(source, default_all=True):
     selected = []
     for value in source.getlist("partial"):
         try:
@@ -2896,13 +2919,74 @@ def requested_partials(source):
                 selected.append(number)
         except (TypeError, ValueError):
             continue
-    return sorted(selected) or list(PARTIALS)
+    return sorted(selected) or (list(PARTIALS) if default_all else [])
 
 
 @app.get("/reports/<int:student_id>/pdf")
 @report_access_required
 def teacher_pdf(student_id):
-    return make_pdf([student_id], requested_partials(request.args))
+    if not teacher_can_access_student(student_id):
+        return "Estudiante no encontrado", 404
+    if request.args.getlist("partial") or request.args.get("class_filter") == "1":
+        selected_class_ids = []
+        for value in request.args.getlist("class_id"):
+            try:
+                selected_class_ids.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        return make_pdf(
+            [student_id],
+            requested_partials(request.args),
+            selected_class_ids=selected_class_ids if request.args.get("class_filter") == "1" else None,
+        )
+    with db() as connection:
+        student = connection.execute(
+            "SELECT s.*, g.name AS group_name FROM students s "
+            "LEFT JOIN groups g ON g.id=s.group_id WHERE s.id=?",
+            (student_id,),
+        ).fetchone()
+        class_options = connection.execute(
+            """
+            SELECT DISTINCT c.id, c.name AS class_name, s.name AS subject_name,
+                   g.name AS group_name, c.grade, c.section
+            FROM student_classes sc
+            JOIN classes c ON c.id=sc.class_id
+            JOIN subjects s ON s.id=c.subject_id
+            LEFT JOIN groups g ON g.id=c.group_id
+            WHERE sc.student_id=?
+            ORDER BY s.name, g.name, c.grade, c.section, c.name
+            """,
+            (student_id,),
+        ).fetchall()
+    return render_template(
+        "report_options.html",
+        student=student,
+        class_options=class_options,
+    )
+
+
+@app.post("/reports/<int:student_id>/pdf")
+@report_access_required
+def teacher_student_pdf(student_id):
+    if not teacher_can_access_student(student_id):
+        return "Estudiante no encontrado", 404
+    selected_partials = requested_partials(
+        request.form,
+        default_all=request.form.get("partial_filter") != "1",
+    )
+    has_class_filter = request.form.get("class_filter") == "1"
+    selected_class_ids = []
+    for value in request.form.getlist("class_id"):
+        try:
+            selected_class_ids.append(int(value))
+        except (TypeError, ValueError):
+            flash("La selección de clases no es válida.", "error")
+            return redirect(url_for("teacher_pdf", student_id=student_id))
+    return make_pdf(
+        [student_id],
+        selected_partials,
+        selected_class_ids=selected_class_ids if has_class_filter else None,
+    )
 
 
 @app.post("/reports/pdf")
@@ -2917,7 +3001,24 @@ def teacher_selected_pdf():
     if not student_ids:
         flash("Selecciona al menos un estudiante.", "error")
         return redirect(url_for("print_reports"))
-    return make_pdf(student_ids, requested_partials(request.form))
+    selected_partials = requested_partials(
+        request.form,
+        default_all=request.form.get("partial_filter") != "1",
+    )
+    has_class_filter = request.form.get("class_filter") == "1"
+    selected_class_ids = []
+    for value in request.form.getlist("class_id"):
+        try:
+            class_id = int(value)
+            if class_id not in selected_class_ids:
+                selected_class_ids.append(class_id)
+        except (TypeError, ValueError):
+            continue
+    return make_pdf(
+        student_ids,
+        selected_partials,
+        selected_class_ids=selected_class_ids if has_class_filter else None,
+    )
 
 
 @app.route('/academic-structure', methods=['GET', 'POST'])
@@ -3058,7 +3159,7 @@ def _catalog_rows():
         return connection.execute('SELECT * FROM subject_catalog ORDER BY active DESC, id').fetchall()
 
 
-def make_pdf(student_ids, selected_partials):
+def make_pdf(student_ids, selected_partials, selected_class_ids=None):
     teacher_id = session.get("teacher_id")
     if not student_ids or any(not teacher_can_access_student(student_id, teacher_id) for student_id in student_ids):
         return "Estudiante no encontrado", 404
@@ -3072,6 +3173,26 @@ def make_pdf(student_ids, selected_partials):
             tuple(student_ids)).fetchall()
         subject_rows = connection.execute("SELECT id, name FROM subjects").fetchall()
         conduct_rows = connection.execute("SELECT * FROM conduct_evaluations WHERE student_id IN ({})".format(placeholders), tuple(student_ids)).fetchall()
+        class_subjects_by_student = {}
+        if selected_class_ids is not None:
+            class_rows = []
+            if selected_class_ids:
+                class_placeholders = ",".join("?" for _ in selected_class_ids)
+                class_rows = connection.execute(
+                    f"""
+                    SELECT sc.student_id, c.id AS class_id, c.subject_id
+                    FROM student_classes sc
+                    JOIN classes c ON c.id=sc.class_id
+                    WHERE sc.student_id IN ({placeholders})
+                      AND c.id IN ({class_placeholders})
+                    """,
+                    (*student_ids, *selected_class_ids),
+                ).fetchall()
+            found_class_ids = {row["class_id"] for row in class_rows}
+            if found_class_ids != set(selected_class_ids):
+                return "Clase no encontrada", 404
+            for row in class_rows:
+                class_subjects_by_student.setdefault(row["student_id"], set()).add(row["subject_id"])
     if not students: return "Estudiante no encontrado", 404
     subject_names = {row["id"]: row["name"] for row in subject_rows}
     conduct_by_student = {}
@@ -3087,10 +3208,20 @@ def make_pdf(student_ids, selected_partials):
         current = settings(student["group_teacher_id"]) if student["group_teacher_id"] else fallback_settings
         logo_path = os.path.join(UPLOAD_DIR, current["logo_filename"]) if current["logo_filename"] else ""
         partials_by_subject, total = summary(student)
+        selected_subject_ids = class_subjects_by_student.get(student["id"], set()) if selected_class_ids is not None else None
+        if selected_subject_ids is not None:
+            partials_by_subject = {
+                subject_id: data for subject_id, data in partials_by_subject.items()
+                if subject_id in selected_subject_ids
+            }
         if logo_path and os.path.isfile(logo_path): story.append(PDFImage(logo_path, width=.65*inch, height=.65*inch))
-        subject_names_list = sorted({subject_names.get(sid, "General") if sid else "General" for sid in partials_by_subject.keys()})
+        report_subject_ids = (
+            selected_subject_ids if selected_subject_ids is not None
+            else set(subject_names) | set(partials_by_subject)
+        )
+        subject_names_list = sorted({subject_names.get(sid, "General") if sid else "General" for sid in report_subject_ids})
         subject_label = ", ".join(subject_names_list) if subject_names_list else "Sin materias registradas"
-        partials_label = ", ".join(partial_name(p) for p in selected_partials) if selected_partials else "Todos los parciales"
+        partials_label = ", ".join(partial_name(p) for p in selected_partials) if selected_partials else "Ningún parcial"
         story += [Paragraph(current["school_name"], styles["Title"]), Paragraph("REPORTE ACADÉMICO", styles["Heading2"]), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 10)]
         conduct_entries = conduct_by_student.get(student["id"], {})
         if not conduct_entries and student["conduct_score"] is not None:
@@ -3099,7 +3230,7 @@ def make_pdf(student_ids, selected_partials):
         conduct_label = qualitative_learning_label(first_conduct.get("quantitative")) if first_conduct.get("quantitative") is not None else (student["conduct"] or "Sin registrar")
         conduct_quantitative = f"{conduct_entries.get(1, {}).get('quantitative', student['conduct_score']):.2f} / 100" if conduct_entries.get(1, {}).get('quantitative', student['conduct_score']) is not None else "Sin registrar"
         conduct_data = [["Parcial", "Cuantitativa", "Cualitativa", "Criterios utilizados", "Incidentes registrados", "Observaciones"]]
-        for partial in range(1, 5):
+        for partial in selected_partials:
             entry = conduct_entries.get(partial, {})
             conduct_data.append([
                 partial_name(partial),
@@ -3111,16 +3242,22 @@ def make_pdf(student_ids, selected_partials):
             ])
         # Matriz MINED: cada corte tiene cuantitativa y cualitativa en columnas
         # paralelas; los semestres y el cierre anual también se promedian.
+        report_partials = selected_partials
+        final_label = "Nota final" if report_partials == list(PARTIALS) else "Promedio incluido"
         summary_data = [
-            ["Asignatura / componente", "Parcial I", "", "Parcial II", "", "Parcial III", "", "Parcial IV", "", "Nota final", ""],
-            ["", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa", "Cuantitativa", "Cualitativa"],
+            ["Asignatura / componente"] + [item for partial in report_partials for item in (partial_name(partial), "")] + [final_label, ""],
+            [""] + [item for _ in report_partials for item in ("Cuantitativa", "Cualitativa")] + ["Cuantitativa", "Cualitativa"],
         ]
         detail_data = [["Materia", "Parcial", "Evaluación", "Nota", "Fecha"]]
         extraordinary = [["Materia", "Parcial", "Tipo", "Fecha", "Nota / 40"]]
         selected_total = 0.0
+        selected_grade_count = 0
         # La boleta debe incluir todo el catálogo de asignaturas, aunque aún
         # no existan registros de calificación para el estudiante.
-        subject_ids = sorted(set(subject_names) | set(partials_by_subject), key=lambda sid: mined_subject_order(subject_names.get(sid, "General")))
+        subject_ids = sorted(
+            report_subject_ids,
+            key=lambda sid: mined_subject_order(subject_names.get(sid, "General")),
+        )
         for sid in subject_ids:
             subject_data = partials_by_subject.get(sid, {"partials": {}})
             subject_name = subject_names.get(sid, "General") if sid else "General"
@@ -3128,9 +3265,10 @@ def make_pdf(student_ids, selected_partials):
             for p in sorted(subject_data["partials"]):
                 row = subject_data["partials"][p]
                 subject_values[p] = row["result"]
-                if not selected_partials or p in selected_partials:
+                if p in selected_partials:
                     selected_total += row["result"]
-                if selected_partials and p not in selected_partials:
+                    selected_grade_count += 1
+                if p not in report_partials:
                     continue
                 recovery = f"{row['recovery_score']:.2f}" if row.get("recovery_type") else "-"
                 for i in range(1, 7):
@@ -3141,45 +3279,48 @@ def make_pdf(student_ids, selected_partials):
                     extraordinary.append([subject_name, partial_name(p), row["recovery_type"], row.get("recovery_date") or "-", f"{row['recovery_score']:.2f}"])
                 detail_data.append([subject_name, partial_name(p), "Examen aplicado", f"{applied_exam(row):.2f} / 40", row.get("exam_date") or row.get("recovery_date") or "-"])
                 detail_data.append([subject_name, partial_name(p), "Nota final del parcial", f"{row['result']:.2f} / 100", "-"])
-            visible = {p: subject_values.get(p) for p in range(1, 5)}
-            final_values = [value for p, value in subject_values.items() if not selected_partials or p in selected_partials]
+            final_values = [subject_values[p] for p in report_partials if p in subject_values]
             final_value = sum(final_values) / len(final_values) if final_values else None
             row_data = [subject_name]
-            for value in [visible[1], visible[2], visible[3], visible[4], final_value]:
+            for value in [*(subject_values.get(p) for p in report_partials), final_value]:
                 row_data.extend([f"{value:.2f}" if value is not None else "Sin calificación", qualitative_learning_label(value) if value is not None else "Sin calificación"])
             summary_data.append(row_data)
         if len(summary_data) == 2:
-            summary_data.append(["-"] + ["-"] * 10)
+            summary_data.append(["-"] + ["-"] * (2 * (len(report_partials) + 1)))
             detail_data.append(["-", "-", "Sin registros", "-", "-"])
         conduct_row = ["Conducta (desempeño personal y ciudadano)"]
-        for partial in range(1, 5):
+        for partial in report_partials:
             entry = conduct_entries.get(partial, {})
             conduct_quantitative_short = f"{entry['quantitative']:.2f}" if entry.get("quantitative") is not None else "Sin calificación"
             conduct_row.extend([conduct_quantitative_short, qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración"])
-        final_conduct = conduct_entries.get(4) or conduct_entries.get(1) or {}
+        final_conduct = conduct_entries.get(report_partials[-1], {}) if report_partials else {}
         conduct_row.extend(["-", final_conduct.get("qualitative") or "-"])
         summary_data.append(conduct_row)
         conduct_table = Table(conduct_data, colWidths=[.9*inch, 1.05*inch, 1.05*inch, 2.25*inch, 2.25*inch, 2.35*inch]); conduct_table.setStyle(header_style)
-        summary_table = Table(summary_data, colWidths=[2.1*inch] + [.82*inch] * 10)
+        summary_table = Table(summary_data, colWidths=[2.1*inch] + [.82*inch] * (2 * (len(report_partials) + 1)))
+        header_spans = [("SPAN", (0, 0), (0, 1))]
+        for partial_index in range(len(report_partials) + 1):
+            column = 1 + partial_index * 2
+            header_spans.append(("SPAN", (column, 0), (column + 1, 0)))
         summary_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), "#17365d"), ("TEXTCOLOR", (0, 0), (-1, 0), "white"),
             ("BACKGROUND", (0, 1), (-1, 1), "#dbe7f3"), ("TEXTCOLOR", (0, 1), (-1, 1), "#17365d"),
-            ("SPAN", (0, 0), (0, 1)), ("SPAN", (1, 0), (2, 0)), ("SPAN", (3, 0), (4, 0)),
-            ("SPAN", (5, 0), (6, 0)), ("SPAN", (7, 0), (8, 0)), ("SPAN", (9, 0), (10, 0)),
+            *header_spans,
             ("GRID", (0, 0), (-1, -1), .4, "#b7c3d0"), ("ALIGN", (1, 0), (-1, -1), "CENTER"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("FONTSIZE", (0, 0), (-1, -1), 6), ("PADDING", (0, 0), (-1, -1), 3),
         ]))
         detail_table = Table(detail_data, colWidths=[1.25*inch, .8*inch, 1.7*inch, 1.1*inch, 1.1*inch]); detail_table.setStyle(header_style)
         extraordinary_table = Table(extraordinary, colWidths=[1.2*inch, .75*inch, 1.7*inch, 1.2*inch, .9*inch]); extraordinary_table.setStyle(header_style)
-        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final de esta boleta es el promedio de los cuatro cortes registrados. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). La conducta se registra cualitativamente como desempeño personal y ciudadano. En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado."
+        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final del año promedia los cuatro cortes registrados; el promedio mostrado considera los parciales incluidos. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). La conducta se registra cualitativamente como desempeño personal y ciudadano. En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado."
         story += [Paragraph("Resumen de notas por materia y cortes evaluativos", styles["Heading3"]), summary_table, Spacer(1, 6), Paragraph("La conducta se registra como desempeño personal y ciudadano, de forma cualitativa.", styles["Normal"]), Spacer(1, 8), Paragraph("Detalle de conducta", styles["Heading3"]), conduct_table, Spacer(1, 10)]
         if len(extraordinary) > 1:
             story += [Paragraph("Notas extraordinarias registradas", styles["Heading3"]), extraordinary_table, Spacer(1, 10)]
         if selected_partials:
-            count = len(selected_partials)
-            story += [Paragraph(f"Total de los parciales seleccionados: {selected_total:.2f} / {count * 100:.2f}", styles["Heading3"]), Paragraph(f"Promedio de los parciales seleccionados: {selected_total / max(count, 1):.2f} / 100", styles["Normal"])]
+            maximum_total = selected_grade_count * 100
+            average_text = f"{selected_total / selected_grade_count:.2f} / 100" if selected_grade_count else "Sin calificaciones"
+            story += [Paragraph(f"Total de las notas incluidas: {selected_total:.2f} / {maximum_total:.2f}", styles["Heading3"]), Paragraph(f"Promedio de los parciales seleccionados: {average_text}", styles["Normal"])]
         else:
-            story += [Paragraph(f"Total de los cuatro parciales: {total:.2f} / 400", styles["Heading3"]), Paragraph(f"Nota final del año: {total / 4:.2f} / 100", styles["Normal"])]
+            story += [Paragraph("No se seleccionaron parciales para incluir en el total.", styles["Normal"])]
         story += [Paragraph(f"Criterios evaluativos: {current['evaluation_criteria'] or 'No registrados'}", styles["Normal"]), Spacer(1, 6), Paragraph("Reglas de evaluación", styles["Heading3"]), Paragraph(rules, styles["Normal"]), Spacer(1, 28), Paragraph("______________________________                         ______________________________", center_style), Paragraph("Firma del docente                                                        Firma del estudiante/tutor", center_style)]
     document.build(story); output.seek(0)
     return send_file(output, mimetype="application/pdf", as_attachment=True, download_name="reportes-academicos.pdf")

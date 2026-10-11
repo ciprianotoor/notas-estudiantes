@@ -29,7 +29,7 @@ Conducta conserva cuantitativa, cualitativa, criterios, incidentes y observacion
 
 ## Bajas, consulta e impresión
 
-La baja conserva notas y expediente. Desde “Dados de baja” se puede restablecer matrícula, exportar CSV, imprimir o eliminar definitivamente; esto último solo Admin/Dirección y con confirmación. En “Imprimir notas” se filtra por nombre/código y grupo, se seleccionan estudiantes/parciales y cada estudiante sale en su propia página PDF.
+La baja conserva notas y expediente. Desde “Dados de baja” se puede restablecer matrícula, exportar CSV, imprimir o eliminar definitivamente; esto último solo Admin/Dirección y con confirmación. Al pulsar “Imprimir boleta” en un estudiante puedes elegir las clases y parciales antes de generar el PDF. En “Imprimir notas” también se pueden filtrar y seleccionar varios estudiantes, clases y parciales para generar un PDF con cada estudiante en su propia página.
 
 ## Tema, ayuda y pruebas
 
