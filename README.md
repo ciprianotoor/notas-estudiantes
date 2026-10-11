@@ -69,6 +69,11 @@ Para producción usa un servidor WSGI detrás de un proxy, define una `SECRET_KE
 
 ## Crear instalador para Windows
 
+Para una instalación sencilla desde GitHub con Docker Desktop, descarga
+[`instalar_windows.bat`](instalar_windows.bat), ejecútalo y sigue las
+indicaciones. El script instala Docker Desktop mediante `winget` si está
+disponible, clona o actualiza el proyecto y conserva la carpeta `data`.
+
 La compilación debe hacerse en Windows 10/11. Requiere Python 3.11+, Git e Inno Setup 6 (<https://jrsoftware.org/isinfo.php>).
 
 1. En PowerShell clona el proyecto y prepara el entorno: `git clone https://github.com/ciprianotoor/notas-estudiantes.git`, `cd notas-estudiantes`, `py -3 -m venv .venv`, `.venv\Scripts\Activate.ps1`, `pip install -r requirements.txt` y `pip install pyinstaller`.
