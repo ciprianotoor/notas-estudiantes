@@ -3253,6 +3253,12 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             selected_subject_ids if selected_subject_ids is not None
             else set(subject_names) | set(partials_by_subject)
         )
+        # Conducta tiene una sección propia en la boleta; no debe repetirse
+        # como si fuera una asignatura dentro de la matriz académica.
+        report_subject_ids = {
+            subject_id for subject_id in report_subject_ids
+            if subject_id is None or subject_names.get(subject_id, "").strip().casefold() != "conducta"
+        }
         subject_names_list = sorted({subject_names.get(sid, "General") if sid else "General" for sid in report_subject_ids})
         subject_label = ", ".join(subject_names_list) if subject_names_list else "Sin materias registradas"
         partials_label = ", ".join(partial_name(p) for p in selected_partials) if selected_partials else "Ningún parcial"
@@ -3289,7 +3295,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             conduct_options["include"]
             and conduct_fields
             and report_partials
-            and report_subject_ids
+            and (report_subject_ids or selected_class_ids)
         )
         final_label = "Nota final" if report_partials == list(PARTIALS) else "Promedio incluido"
         summary_data = [
