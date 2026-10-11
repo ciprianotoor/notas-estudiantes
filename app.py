@@ -12,6 +12,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.units import inch
 from reportlab.platypus import Image as PDFImage, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from xml.sax.saxutils import escape
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -3179,6 +3180,11 @@ def _catalog_rows():
         return connection.execute('SELECT * FROM subject_catalog ORDER BY active DESC, id').fetchall()
 
 
+def pdf_cell(value, style):
+    text = escape(str(value if value is not None else "")).replace("\n", "<br/>")
+    return Paragraph(text, style)
+
+
 def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_options=None):
     conduct_options = conduct_options or {
         "include": True,
@@ -3225,6 +3231,10 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
     fallback_settings = settings(); output = io.BytesIO()
     document = SimpleDocTemplate(output, pagesize=landscape(letter), rightMargin=.45*inch, leftMargin=.45*inch, topMargin=.4*inch, bottomMargin=.4*inch)
     styles = getSampleStyleSheet(); center_style = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER); story = []
+    available_width = landscape(letter)[0] - document.leftMargin - document.rightMargin
+    cell_style = ParagraphStyle("pdf_cell", parent=styles["Normal"], fontSize=7, leading=8, splitLongWords=1)
+    centered_cell_style = ParagraphStyle("pdf_centered_cell", parent=cell_style, alignment=TA_CENTER)
+    header_cell_style = ParagraphStyle("pdf_header_cell", parent=centered_cell_style, fontName="Helvetica-Bold", textColor="white")
     header_style = TableStyle([("BACKGROUND", (0,0), (-1,0), "#17365d"), ("TEXTCOLOR", (0,0), (-1,0), "white"), ("GRID", (0,0), (-1,-1), .5, "#b7c3d0"), ("ALIGN", (0,0), (-1,0), "LEFT"), ("ALIGN", (1,1), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("FONTSIZE", (0,0), (-1,-1), 8), ("PADDING", (0,0), (-1,-1), 5)])
     for index, student in enumerate(students):
         if index: story.append(PageBreak())
@@ -3258,7 +3268,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             for key in CONDUCT_DETAIL_FIELDS
             if key in conduct_options["fields"]
         ]
-        conduct_data = [["Parcial"] + [label for _, label, _ in conduct_fields]]
+        conduct_data = [[pdf_cell("Parcial", header_cell_style)] + [pdf_cell(label, header_cell_style) for _, label, _ in conduct_fields]]
         for partial in selected_partials:
             entry = conduct_entries.get(partial, {})
             conduct_values = {
@@ -3268,7 +3278,10 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                 "incidents": entry.get("incidents") or "Ninguno registrado",
                 "observations": entry.get("observations") or "Sin observaciones",
             }
-            conduct_data.append([partial_name(partial)] + [conduct_values[key] for key, _, _ in conduct_fields])
+            conduct_data.append(
+                [pdf_cell(partial_name(partial), centered_cell_style)]
+                + [pdf_cell(conduct_values[key], cell_style) for key, _, _ in conduct_fields]
+            )
         # Matriz MINED: cada corte tiene cuantitativa y cualitativa en columnas
         # paralelas; los semestres y el cierre anual también se promedian.
         report_partials = selected_partials
@@ -3343,12 +3356,30 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                 if "qualitative" in conduct_options["fields"] else "-",
             ])
             summary_data.append(conduct_row)
+        conduct_width_weights = [.85] + [width for _, _, width in conduct_fields]
+        conduct_width_total = sum(conduct_width_weights)
         conduct_table = Table(
             conduct_data,
-            colWidths=[.9*inch] + [width * inch for _, _, width in conduct_fields],
+            colWidths=[available_width * weight / conduct_width_total for weight in conduct_width_weights],
         )
         conduct_table.setStyle(header_style)
-        summary_table = Table(summary_data, colWidths=[2.1*inch] + [.82*inch] * (2 * (len(report_partials) + 1)))
+        summary_subcolumns = 2 * (len(report_partials) + 1)
+        summary_subject_width = 2.0 * inch
+        summary_widths = [summary_subject_width] + [
+            (available_width - summary_subject_width) / summary_subcolumns
+        ] * summary_subcolumns
+        summary_cells = [
+            [
+                pdf_cell(
+                    value,
+                    header_cell_style if row_index == 0 else
+                    (cell_style if column_index == 0 and row_index > 1 else centered_cell_style),
+                )
+                for column_index, value in enumerate(row)
+            ]
+            for row_index, row in enumerate(summary_data)
+        ]
+        summary_table = Table(summary_cells, colWidths=summary_widths)
         header_spans = [("SPAN", (0, 0), (0, 1))]
         for partial_index in range(len(report_partials) + 1):
             column = 1 + partial_index * 2
@@ -3360,8 +3391,20 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             ("GRID", (0, 0), (-1, -1), .4, "#b7c3d0"), ("ALIGN", (1, 0), (-1, -1), "CENTER"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("FONTSIZE", (0, 0), (-1, -1), 6), ("PADDING", (0, 0), (-1, -1), 3),
         ]))
-        detail_table = Table(detail_data, colWidths=[1.25*inch, .8*inch, 1.7*inch, 1.1*inch, 1.1*inch]); detail_table.setStyle(header_style)
-        extraordinary_table = Table(extraordinary, colWidths=[1.2*inch, .75*inch, 1.7*inch, 1.2*inch, .9*inch]); extraordinary_table.setStyle(header_style)
+        detail_width_weights = [2.0, 1.2, 2.0, 1.4, 1.4]
+        detail_widths = [available_width * weight / sum(detail_width_weights) for weight in detail_width_weights]
+        detail_cells = [
+            [pdf_cell(value, header_cell_style if row_index == 0 else centered_cell_style) for value in row]
+            for row_index, row in enumerate(detail_data)
+        ]
+        detail_table = Table(detail_cells, colWidths=detail_widths); detail_table.setStyle(header_style)
+        extraordinary_width_weights = [1.6, 1.1, 2.0, 1.5, 1.2]
+        extraordinary_widths = [available_width * weight / sum(extraordinary_width_weights) for weight in extraordinary_width_weights]
+        extraordinary_cells = [
+            [pdf_cell(value, header_cell_style if row_index == 0 else centered_cell_style) for value in row]
+            for row_index, row in enumerate(extraordinary)
+        ]
+        extraordinary_table = Table(extraordinary_cells, colWidths=extraordinary_widths); extraordinary_table.setStyle(header_style)
         rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final del año promedia los cuatro cortes registrados; el promedio mostrado considera los parciales incluidos. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado."
         if include_conduct:
             rules += " La conducta se registra cualitativamente como desempeño personal y ciudadano."

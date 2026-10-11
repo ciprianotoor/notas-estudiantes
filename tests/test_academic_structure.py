@@ -7,6 +7,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app as app_module
 
 
+def pdf_cell_text(value):
+    while isinstance(value, (list, tuple)) and len(value) == 1:
+        value = value[0]
+    return value.getPlainText() if hasattr(value, "getPlainText") else value
+
+
 def test_settings_fallback_uses_teacher_name_when_teacher_settings_are_missing(tmp_path, monkeypatch):
     db_path = tmp_path / "notas.db"
     upload_dir = tmp_path / "uploads"
@@ -1101,6 +1107,7 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
         captured["tables"] = [
             flowable for flowable in story if isinstance(flowable, app_module.Table)
         ]
+        captured["table_widths"] = [sum(table._colWidths) for table in captured["tables"]]
         captured["paragraphs"] = [
             flowable.getPlainText()
             for flowable in story
@@ -1124,30 +1131,38 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     )
     assert response.status_code == 200
     assert response.mimetype == "application/pdf"
+    available_width = app_module.landscape(app_module.letter)[0] - 0.9 * app_module.inch
+    assert all(width <= available_width + 0.1 for width in captured["table_widths"])
 
     summary_table = next(
-        table for table in captured["tables"]
-        if table._cellvalues[0][0] == "Asignatura / componente"
+        (
+            table for table in captured["tables"]
+            if pdf_cell_text(table._cellvalues[0][0]) == "Asignatura / componente"
+        ),
+        None,
     )
+    assert summary_table is not None, [
+        pdf_cell_text(table._cellvalues[0][0]) for table in captured["tables"]
+    ]
     summary_rows = summary_table._cellvalues
-    assert summary_rows[0][1] == "Parcial I"
-    assert summary_rows[0][3] == "Promedio incluido"
-    assert any(row[0] == "Matemática" for row in summary_rows[2:])
-    assert not any(row[0] == "Biología" for row in summary_rows[2:])
+    assert pdf_cell_text(summary_rows[0][1]) == "Parcial I"
+    assert pdf_cell_text(summary_rows[0][3]) == "Promedio incluido"
+    assert any(pdf_cell_text(row[0]) == "Matemática" for row in summary_rows[2:])
+    assert not any(pdf_cell_text(row[0]) == "Biología" for row in summary_rows[2:])
 
     conduct_table = next(
         table for table in captured["tables"]
-        if table._cellvalues[0][0] == "Parcial"
+        if pdf_cell_text(table._cellvalues[0][0]) == "Parcial"
     )
-    assert conduct_table._cellvalues[0] == [
+    assert [pdf_cell_text(value) for value in conduct_table._cellvalues[0]] == [
         "Parcial",
         "Cuantitativa",
         "Incidentes registrados",
     ]
     assert len(conduct_table._cellvalues) == 2
-    assert conduct_table._cellvalues[1][0] == "Parcial I"
-    assert conduct_table._cellvalues[1][1] == "85.00 / 100"
-    assert conduct_table._cellvalues[1][2] == "Incidentes parcial 1"
+    assert pdf_cell_text(conduct_table._cellvalues[1][0]) == "Parcial I"
+    assert pdf_cell_text(conduct_table._cellvalues[1][1]) == "85.00 / 100"
+    assert pdf_cell_text(conduct_table._cellvalues[1][2]) == "Incidentes parcial 1"
 
     individual_response = client.post(
         f"/reports/{student['id']}/pdf",
@@ -1161,17 +1176,17 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     assert individual_response.status_code == 200
     individual_summary = next(
         table for table in captured["tables"]
-        if table._cellvalues[0][0] == "Asignatura / componente"
+        if pdf_cell_text(table._cellvalues[0][0]) == "Asignatura / componente"
     )
     individual_rows = individual_summary._cellvalues
-    assert individual_rows[0][1] == "Parcial II"
-    assert any(row[0] == "Biología" for row in individual_rows[2:])
-    assert not any(row[0] == "Matemática" for row in individual_rows[2:])
+    assert pdf_cell_text(individual_rows[0][1]) == "Parcial II"
+    assert any(pdf_cell_text(row[0]) == "Biología" for row in individual_rows[2:])
+    assert not any(pdf_cell_text(row[0]) == "Matemática" for row in individual_rows[2:])
     individual_conduct = next(
         table for table in captured["tables"]
-        if table._cellvalues[0][0] == "Parcial"
+        if pdf_cell_text(table._cellvalues[0][0]) == "Parcial"
     )
-    assert individual_conduct._cellvalues[0] == [
+    assert [pdf_cell_text(value) for value in individual_conduct._cellvalues[0]] == [
         "Parcial",
         "Cuantitativa",
         "Cualitativa",
@@ -1187,15 +1202,15 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     assert empty_selection_response.status_code == 200
     empty_summary = next(
         table for table in captured["tables"]
-        if table._cellvalues[0][0] == "Asignatura / componente"
+        if pdf_cell_text(table._cellvalues[0][0]) == "Asignatura / componente"
     )
     empty_rows = empty_summary._cellvalues
-    assert empty_rows[0][1] == "Promedio incluido"
-    assert not any(row[0] in ("Matemática", "Biología") for row in empty_rows[2:])
-    assert not any(row[0].startswith("Conducta") for row in empty_rows[2:])
+    assert pdf_cell_text(empty_rows[0][1]) == "Promedio incluido"
+    assert not any(pdf_cell_text(row[0]) in ("Matemática", "Biología") for row in empty_rows[2:])
+    assert not any(pdf_cell_text(row[0]).startswith("Conducta") for row in empty_rows[2:])
     assert len(empty_rows[0]) == 3
     assert not any(
-        table._cellvalues[0][0] == "Parcial"
+        pdf_cell_text(table._cellvalues[0][0]) == "Parcial"
         for table in captured["tables"]
     )
     assert not any("conducta" in text.casefold() for text in captured["paragraphs"])
@@ -1226,14 +1241,14 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     assert detail_only_response.status_code == 200
     detail_only_table = next(
         table for table in captured["tables"]
-        if table._cellvalues[0][0] == "Parcial"
+        if pdf_cell_text(table._cellvalues[0][0]) == "Parcial"
     )
-    assert detail_only_table._cellvalues[0] == [
+    assert [pdf_cell_text(value) for value in detail_only_table._cellvalues[0]] == [
         "Parcial",
         "Criterios utilizados",
     ]
     assert not any(
-        row[0].startswith("Conducta")
+        pdf_cell_text(row[0]).startswith("Conducta")
         for row in captured["tables"][0]._cellvalues[2:]
     )
 
@@ -1250,7 +1265,7 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     )
     assert conduct_disabled_response.status_code == 200
     assert not any(
-        table._cellvalues[0][0] == "Parcial"
+        pdf_cell_text(table._cellvalues[0][0]) == "Parcial"
         for table in captured["tables"]
     )
     assert not any("conducta" in text.casefold() for text in captured["paragraphs"])
@@ -1265,3 +1280,26 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     )
     assert batch_empty_response.status_code == 200
     assert "Seleccionar todos" in page_html
+
+    full_width_response = client.post(
+        "/reports/pdf",
+        data={
+            "student_id": str(student["id"]),
+            "class_filter": "1",
+            "class_id": [str(class_ids["Matemática"]), str(class_ids["Biología"])],
+            "partial_filter": "1",
+            "partial": ["1", "2", "3", "4"],
+        },
+    )
+    assert full_width_response.status_code == 200
+    assert all(width <= available_width + 0.1 for width in captured["table_widths"])
+    full_summary = next(
+        table for table in captured["tables"]
+        if pdf_cell_text(table._cellvalues[0][0]) == "Asignatura / componente"
+    )
+    assert [pdf_cell_text(value) for value in full_summary._cellvalues[0][1:9:2]] == [
+        "Parcial I",
+        "Parcial II",
+        "Parcial III",
+        "Parcial IV",
+    ]
