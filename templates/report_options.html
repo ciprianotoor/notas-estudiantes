@@ -33,6 +33,22 @@
       </label>
       {% endfor %}
     </div>
+    <input type="hidden" name="conduct_filter" value="1">
+    <h2>Conducta</h2>
+    <div class="selection-list">
+      <label><input type="checkbox" name="include_conduct" value="1" checked>
+        Incluir evaluación de conducta
+      </label>
+    </div>
+    <p class="muted">Selecciona los datos de conducta que aparecerán en la boleta.</p>
+    <button type="button" class="secondary selection-toggle" data-selection-group="conduct_field">Deseleccionar todos</button>
+    <div class="selection-list">
+      <label><input type="checkbox" name="conduct_field" value="quantitative" checked> Cuantitativa</label>
+      <label><input type="checkbox" name="conduct_field" value="qualitative" checked> Cualitativa</label>
+      <label><input type="checkbox" name="conduct_field" value="criteria" checked> Criterios utilizados</label>
+      <label><input type="checkbox" name="conduct_field" value="incidents" checked> Incidentes registrados</label>
+      <label><input type="checkbox" name="conduct_field" value="observations" checked> Observaciones</label>
+    </div>
     <div class="actions">
       <button type="submit">Generar boleta PDF</button>
       <a class="button secondary" href="{{ url_for('grades', student_id=student.id) }}">Cancelar</a>
@@ -61,6 +77,13 @@ document.querySelectorAll('.selection-toggle').forEach(function(button) {
   });
   checkboxes.forEach(function(input) { input.addEventListener('change', updateLabel); });
   updateLabel();
+});
+document.querySelectorAll('input[name="include_conduct"]').forEach(function(toggle) {
+  toggle.addEventListener('change', function() {
+    toggle.closest('form').querySelectorAll('input[name="conduct_field"]').forEach(function(input) {
+      input.disabled = !toggle.checked;
+    });
+  });
 });
 </script>
 {% endblock %}

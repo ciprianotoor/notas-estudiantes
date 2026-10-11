@@ -2922,6 +2922,24 @@ def requested_partials(source, default_all=True):
     return sorted(selected) or (list(PARTIALS) if default_all else [])
 
 
+CONDUCT_DETAIL_FIELDS = {
+    "quantitative": ("Cuantitativa", 0.85),
+    "qualitative": ("Cualitativa", 0.9),
+    "criteria": ("Criterios utilizados", 2.1),
+    "incidents": ("Incidentes registrados", 2.0),
+    "observations": ("Observaciones", 2.1),
+}
+
+
+def requested_conduct_options(source):
+    if source.get("conduct_filter") != "1":
+        return {"include": True, "fields": set(CONDUCT_DETAIL_FIELDS)}
+    return {
+        "include": source.get("include_conduct") == "1",
+        "fields": set(source.getlist("conduct_field")) & set(CONDUCT_DETAIL_FIELDS),
+    }
+
+
 @app.get("/reports/<int:student_id>/pdf")
 @report_access_required
 def teacher_pdf(student_id):
@@ -2986,6 +3004,7 @@ def teacher_student_pdf(student_id):
         [student_id],
         selected_partials,
         selected_class_ids=selected_class_ids if has_class_filter else None,
+        conduct_options=requested_conduct_options(request.form),
     )
 
 
@@ -3018,6 +3037,7 @@ def teacher_selected_pdf():
         student_ids,
         selected_partials,
         selected_class_ids=selected_class_ids if has_class_filter else None,
+        conduct_options=requested_conduct_options(request.form),
     )
 
 
@@ -3159,7 +3179,11 @@ def _catalog_rows():
         return connection.execute('SELECT * FROM subject_catalog ORDER BY active DESC, id').fetchall()
 
 
-def make_pdf(student_ids, selected_partials, selected_class_ids=None):
+def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_options=None):
+    conduct_options = conduct_options or {
+        "include": True,
+        "fields": set(CONDUCT_DETAIL_FIELDS),
+    }
     teacher_id = session.get("teacher_id")
     if not student_ids or any(not teacher_can_access_student(student_id, teacher_id) for student_id in student_ids):
         return "Estudiante no encontrado", 404
@@ -3229,20 +3253,31 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None):
         first_conduct = conduct_entries.get(1, {})
         conduct_label = qualitative_learning_label(first_conduct.get("quantitative")) if first_conduct.get("quantitative") is not None else (student["conduct"] or "Sin registrar")
         conduct_quantitative = f"{conduct_entries.get(1, {}).get('quantitative', student['conduct_score']):.2f} / 100" if conduct_entries.get(1, {}).get('quantitative', student['conduct_score']) is not None else "Sin registrar"
-        conduct_data = [["Parcial", "Cuantitativa", "Cualitativa", "Criterios utilizados", "Incidentes registrados", "Observaciones"]]
+        conduct_fields = [
+            (key, *CONDUCT_DETAIL_FIELDS[key])
+            for key in CONDUCT_DETAIL_FIELDS
+            if key in conduct_options["fields"]
+        ]
+        conduct_data = [["Parcial"] + [label for _, label, _ in conduct_fields]]
         for partial in selected_partials:
             entry = conduct_entries.get(partial, {})
-            conduct_data.append([
-                partial_name(partial),
-                f"{entry['quantitative']:.2f} / 100" if entry.get("quantitative") is not None else "Sin calificación",
-                qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración",
-                entry.get("criteria") or "Sin registrar",
-                entry.get("incidents") or "Ninguno registrado",
-                entry.get("observations") or "Sin observaciones",
-            ])
+            conduct_values = {
+                "quantitative": f"{entry['quantitative']:.2f} / 100" if entry.get("quantitative") is not None else "Sin calificación",
+                "qualitative": qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración",
+                "criteria": entry.get("criteria") or "Sin registrar",
+                "incidents": entry.get("incidents") or "Ninguno registrado",
+                "observations": entry.get("observations") or "Sin observaciones",
+            }
+            conduct_data.append([partial_name(partial)] + [conduct_values[key] for key, _, _ in conduct_fields])
         # Matriz MINED: cada corte tiene cuantitativa y cualitativa en columnas
         # paralelas; los semestres y el cierre anual también se promedian.
         report_partials = selected_partials
+        include_conduct = bool(
+            conduct_options["include"]
+            and conduct_fields
+            and report_partials
+            and report_subject_ids
+        )
         final_label = "Nota final" if report_partials == list(PARTIALS) else "Promedio incluido"
         summary_data = [
             ["Asignatura / componente"] + [item for partial in report_partials for item in (partial_name(partial), "")] + [final_label, ""],
@@ -3288,15 +3323,31 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None):
         if len(summary_data) == 2:
             summary_data.append(["-"] + ["-"] * (2 * (len(report_partials) + 1)))
             detail_data.append(["-", "-", "Sin registros", "-", "-"])
-        conduct_row = ["Conducta (desempeño personal y ciudadano)"]
-        for partial in report_partials:
-            entry = conduct_entries.get(partial, {})
-            conduct_quantitative_short = f"{entry['quantitative']:.2f}" if entry.get("quantitative") is not None else "Sin calificación"
-            conduct_row.extend([conduct_quantitative_short, qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración"])
-        final_conduct = conduct_entries.get(report_partials[-1], {}) if report_partials else {}
-        conduct_row.extend(["-", final_conduct.get("qualitative") or "-"])
-        summary_data.append(conduct_row)
-        conduct_table = Table(conduct_data, colWidths=[.9*inch, 1.05*inch, 1.05*inch, 2.25*inch, 2.25*inch, 2.35*inch]); conduct_table.setStyle(header_style)
+        if include_conduct and (
+            "quantitative" in conduct_options["fields"]
+            or "qualitative" in conduct_options["fields"]
+        ):
+            conduct_row = ["Conducta (desempeño personal y ciudadano)"]
+            for partial in report_partials:
+                entry = conduct_entries.get(partial, {})
+                conduct_quantitative_short = f"{entry['quantitative']:.2f}" if entry.get("quantitative") is not None else "Sin calificación"
+                conduct_qualitative = qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración"
+                conduct_row.extend([
+                    conduct_quantitative_short if "quantitative" in conduct_options["fields"] else "-",
+                    conduct_qualitative if "qualitative" in conduct_options["fields"] else "-",
+                ])
+            final_conduct = conduct_entries.get(report_partials[-1], {})
+            conduct_row.extend([
+                "-",
+                (final_conduct.get("qualitative") or "-")
+                if "qualitative" in conduct_options["fields"] else "-",
+            ])
+            summary_data.append(conduct_row)
+        conduct_table = Table(
+            conduct_data,
+            colWidths=[.9*inch] + [width * inch for _, _, width in conduct_fields],
+        )
+        conduct_table.setStyle(header_style)
         summary_table = Table(summary_data, colWidths=[2.1*inch] + [.82*inch] * (2 * (len(report_partials) + 1)))
         header_spans = [("SPAN", (0, 0), (0, 1))]
         for partial_index in range(len(report_partials) + 1):
@@ -3311,8 +3362,12 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None):
         ]))
         detail_table = Table(detail_data, colWidths=[1.25*inch, .8*inch, 1.7*inch, 1.1*inch, 1.1*inch]); detail_table.setStyle(header_style)
         extraordinary_table = Table(extraordinary, colWidths=[1.2*inch, .75*inch, 1.7*inch, 1.2*inch, .9*inch]); extraordinary_table.setStyle(header_style)
-        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final del año promedia los cuatro cortes registrados; el promedio mostrado considera los parciales incluidos. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). La conducta se registra cualitativamente como desempeño personal y ciudadano. En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado."
-        story += [Paragraph("Resumen de notas por materia y cortes evaluativos", styles["Heading3"]), summary_table, Spacer(1, 6), Paragraph("La conducta se registra como desempeño personal y ciudadano, de forma cualitativa.", styles["Normal"]), Spacer(1, 8), Paragraph("Detalle de conducta", styles["Heading3"]), conduct_table, Spacer(1, 10)]
+        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final del año promedia los cuatro cortes registrados; el promedio mostrado considera los parciales incluidos. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado."
+        if include_conduct:
+            rules += " La conducta se registra cualitativamente como desempeño personal y ciudadano."
+        story += [Paragraph("Resumen de notas por materia y cortes evaluativos", styles["Heading3"]), summary_table, Spacer(1, 6)]
+        if include_conduct:
+            story += [Paragraph("La conducta se registra como desempeño personal y ciudadano, de forma cualitativa.", styles["Normal"]), Spacer(1, 8), Paragraph("Detalle de conducta", styles["Heading3"]), conduct_table, Spacer(1, 10)]
         if len(extraordinary) > 1:
             story += [Paragraph("Notas extraordinarias registradas", styles["Heading3"]), extraordinary_table, Spacer(1, 10)]
         if selected_partials:

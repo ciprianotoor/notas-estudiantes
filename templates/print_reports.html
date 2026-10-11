@@ -2,11 +2,76 @@
 {% block title %}Imprimir notas{% endblock %}
 {% block content %}
 <h1>Imprimir notas</h1>
-<div class="card"><form method="get" action="{{ url_for('print_reports') }}" class="grid"><label>Nombre o código<input name="q" value="{{ search }}" placeholder="Buscar estudiante"></label><label>Grupo<select name="group_id"><option value="">Todos los grupos</option>{% for group in groups %}<option value="{{ group.id }}" {% if filter_group == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label><button type="submit">Filtrar</button><a class="button secondary" href="{{ url_for('print_reports') }}">Limpiar</a></form></div>
-<div class="card"><form method="post" action="{{ url_for('teacher_selected_pdf') }}"><p class="muted">Selecciona estudiantes, clases y parciales. Cada estudiante se genera en su propia página.</p>
-<input type="hidden" name="class_filter" value="1">
-{% if class_options %}<h2>Clases</h2><button type="button" class="secondary selection-toggle" data-selection-group="class_id">Deseleccionar todas</button><div class="actions">{% for class in class_options %}<label><input type="checkbox" name="class_id" value="{{ class.id }}" checked style="width:auto"> {{ class.subject_name }} — {{ class.class_name }}{% if class.group_name %} ({{ class.group_name }}){% elif class.grade or class.section %} ({{ class.grade }}{% if class.section %} {{ class.section }}{% endif %}){% endif %}</label>{% endfor %}</div>{% else %}<p class="muted">No hay clases matriculadas para los estudiantes filtrados.</p>{% endif %}
-<input type="hidden" name="partial_filter" value="1"><h2>Parciales</h2><button type="button" class="secondary selection-toggle" data-selection-group="partial">Deseleccionar todos</button><div class="actions">{% for p in range(1,5) %}<label><input type="checkbox" name="partial" value="{{ p }}" checked style="width:auto"> {{ partial_name(p) }}</label>{% endfor %}</div><h2>Estudiantes ({{ students|length }})</h2>{% if students %}<table><tr><th>Seleccionar</th><th>Estudiante</th><th>Grupo</th><th>Código</th></tr>{% for student in students %}<tr><td><input type="checkbox" name="student_id" value="{{ student.id }}" style="width:auto"></td><td>{{ student.name }}</td><td>{{ student.group_name or 'Sin grupo' }}</td><td>{{ student.code }}</td></tr>{% endfor %}</table><button type="submit">Generar PDF seleccionado</button>{% else %}<p class="muted">No hay estudiantes que coincidan con el filtro.</p>{% endif %}</form></div>
+<div class="card">
+  <form method="get" action="{{ url_for('print_reports') }}" class="grid">
+    <label>Nombre o código<input name="q" value="{{ search }}" placeholder="Buscar estudiante"></label>
+    <label>Grupo<select name="group_id"><option value="">Todos los grupos</option>{% for group in groups %}<option value="{{ group.id }}" {% if filter_group == group.id %}selected{% endif %}>{{ group.name }}</option>{% endfor %}</select></label>
+    <button type="submit">Filtrar</button>
+    <a class="button secondary" href="{{ url_for('print_reports') }}">Limpiar</a>
+  </form>
+</div>
+<div class="card">
+  <form method="post" action="{{ url_for('teacher_selected_pdf') }}">
+    <p class="muted">Selecciona estudiantes, clases, parciales y los detalles de conducta. Cada estudiante se genera en su propia página.</p>
+    <input type="hidden" name="class_filter" value="1">
+    {% if class_options %}
+    <h2>Clases</h2>
+    <button type="button" class="secondary selection-toggle" data-selection-group="class_id">Deseleccionar todas</button>
+    <div class="actions">
+      {% for class in class_options %}
+      <label><input type="checkbox" name="class_id" value="{{ class.id }}" checked style="width:auto">
+        {{ class.subject_name }} — {{ class.class_name }}{% if class.group_name %} ({{ class.group_name }}){% elif class.grade or class.section %} ({{ class.grade }}{% if class.section %} {{ class.section }}{% endif %}){% endif %}
+      </label>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No hay clases matriculadas para los estudiantes filtrados.</p>
+    {% endif %}
+    <input type="hidden" name="partial_filter" value="1">
+    <h2>Parciales</h2>
+    <button type="button" class="secondary selection-toggle" data-selection-group="partial">Deseleccionar todos</button>
+    <div class="actions">
+      {% for partial in range(1, 5) %}
+      <label><input type="checkbox" name="partial" value="{{ partial }}" checked style="width:auto"> {{ partial_name(partial) }}</label>
+      {% endfor %}
+    </div>
+    <input type="hidden" name="conduct_filter" value="1">
+    <h2>Conducta</h2>
+    <div class="selection-list">
+      <label><input type="checkbox" name="include_conduct" value="1" checked> Incluir evaluación de conducta</label>
+    </div>
+    <p class="muted">Selecciona los datos de conducta que aparecerán en cada boleta.</p>
+    <button type="button" class="secondary selection-toggle" data-selection-group="conduct_field">Deseleccionar todos</button>
+    <div class="selection-list">
+      <label><input type="checkbox" name="conduct_field" value="quantitative" checked> Cuantitativa</label>
+      <label><input type="checkbox" name="conduct_field" value="qualitative" checked> Cualitativa</label>
+      <label><input type="checkbox" name="conduct_field" value="criteria" checked> Criterios utilizados</label>
+      <label><input type="checkbox" name="conduct_field" value="incidents" checked> Incidentes registrados</label>
+      <label><input type="checkbox" name="conduct_field" value="observations" checked> Observaciones</label>
+    </div>
+    <h2>Estudiantes ({{ students|length }})</h2>
+    {% if students %}
+    <table>
+      <tr><th>Seleccionar</th><th>Estudiante</th><th>Grupo</th><th>Código</th></tr>
+      {% for student in students %}
+      <tr>
+        <td><input type="checkbox" name="student_id" value="{{ student.id }}" style="width:auto"></td>
+        <td>{{ student.name }}</td><td>{{ student.group_name or 'Sin grupo' }}</td><td>{{ student.code }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <button type="submit">Generar PDF seleccionado</button>
+    {% else %}
+    <p class="muted">No hay estudiantes que coincidan con el filtro.</p>
+    {% endif %}
+  </form>
+</div>
+<style>
+.selection-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.65rem;margin:1rem 0 1.5rem}
+.selection-list label{display:flex;align-items:center;gap:.55rem;padding:.75rem;background:#f8fafc;border:1px solid #eaecf0;border-radius:8px}
+.selection-list input{width:auto;margin:0}
+.selection-toggle{width:auto;margin:.25rem 0}
+</style>
 <script>
 document.querySelectorAll('.selection-toggle').forEach(function(button) {
   var form = button.closest('form');
@@ -22,6 +87,13 @@ document.querySelectorAll('.selection-toggle').forEach(function(button) {
   });
   checkboxes.forEach(function(input) { input.addEventListener('change', updateLabel); });
   updateLabel();
+});
+document.querySelectorAll('input[name="include_conduct"]').forEach(function(toggle) {
+  toggle.addEventListener('change', function() {
+    toggle.closest('form').querySelectorAll('input[name="conduct_field"]').forEach(function(input) {
+      input.disabled = !toggle.checked;
+    });
+  });
 });
 </script>
 {% endblock %}

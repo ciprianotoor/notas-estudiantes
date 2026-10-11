@@ -53,7 +53,7 @@ Cada asignatura tiene cuatro parciales. La boleta muestra materias por fila y cu
 
 ## Bajas y reportes
 
-Una baja conserva el expediente y las notas. Desde el filtro de estudiantes dados de baja se puede restablecer la matrícula, exportar el expediente CSV o eliminarlo definitivamente (solo Admin/Dirección y con confirmación). Al imprimir la boleta de un estudiante, puedes elegir las clases y parciales que se incluirán antes de generar el PDF. Para imprimir en lote, filtra por nombre/código/grupo y selecciona estudiantes, clases y parciales; cada estudiante se genera en su propia página.
+Una baja conserva el expediente y las notas. Desde el filtro de estudiantes dados de baja se puede restablecer la matrícula, exportar el expediente CSV o eliminarlo definitivamente (solo Admin/Dirección y con confirmación). Al imprimir una boleta individual o en lote, puedes elegir clases y parciales y personalizar Conducta: incluirla u ocultarla y seleccionar datos cuantitativos, cualitativos, criterios, incidentes y observaciones. En la impresión por lote, cada estudiante se genera en su propia página.
 
 ## Pruebas
 

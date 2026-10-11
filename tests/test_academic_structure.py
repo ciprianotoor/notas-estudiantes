@@ -1055,6 +1055,23 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
                     "INSERT INTO partial_grades(student_id,subject_id,partial,work1,exam) VALUES(?,?,?,?,?)",
                     (student["id"], subject_ids[subject_name], partial, 8, 30),
                 )
+        for partial in (1, 2):
+            connection.execute(
+                """
+                INSERT INTO conduct_evaluations(
+                    student_id,partial,quantitative,qualitative,criteria,incidents,observations
+                ) VALUES(?,?,?,?,?,?,?)
+                """,
+                (
+                    student["id"],
+                    partial,
+                    85,
+                    "AS",
+                    f"Criterios parcial {partial}",
+                    f"Incidentes parcial {partial}",
+                    f"Observaciones parcial {partial}",
+                ),
+            )
 
     client = app_module.app.test_client()
     with client.session_transaction() as session:
@@ -1066,12 +1083,16 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     assert page.status_code == 200
     assert "Matemática 7mo A" in page_html
     assert "Biología 7mo A" in page_html
+    assert 'name="conduct_field" value="criteria"' in page_html
+    assert 'name="include_conduct"' in page_html
     individual_options = client.get(f"/reports/{student['id']}/pdf")
     individual_html = individual_options.get_data(as_text=True)
     assert individual_options.status_code == 200
     assert "Matemática 7mo A" in individual_html
     assert "Biología 7mo A" in individual_html
     assert "Deseleccionar todos" in individual_html
+    assert 'name="include_conduct"' in individual_html
+    assert 'name="conduct_field" value="incidents"' in individual_html
 
     captured = {}
     original_build = app_module.SimpleDocTemplate.build
@@ -1079,6 +1100,11 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     def capture_build(document, story):
         captured["tables"] = [
             flowable for flowable in story if isinstance(flowable, app_module.Table)
+        ]
+        captured["paragraphs"] = [
+            flowable.getPlainText()
+            for flowable in story
+            if isinstance(flowable, app_module.Paragraph)
         ]
         return original_build(document, story)
 
@@ -1091,6 +1117,9 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
             "class_id": str(class_ids["Matemática"]),
             "partial_filter": "1",
             "partial": "1",
+            "conduct_filter": "1",
+            "include_conduct": "1",
+            "conduct_field": ["quantitative", "incidents"],
         },
     )
     assert response.status_code == 200
@@ -1110,8 +1139,15 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
         table for table in captured["tables"]
         if table._cellvalues[0][0] == "Parcial"
     )
+    assert conduct_table._cellvalues[0] == [
+        "Parcial",
+        "Cuantitativa",
+        "Incidentes registrados",
+    ]
     assert len(conduct_table._cellvalues) == 2
     assert conduct_table._cellvalues[1][0] == "Parcial I"
+    assert conduct_table._cellvalues[1][1] == "85.00 / 100"
+    assert conduct_table._cellvalues[1][2] == "Incidentes parcial 1"
 
     individual_response = client.post(
         f"/reports/{student['id']}/pdf",
@@ -1131,6 +1167,18 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     assert individual_rows[0][1] == "Parcial II"
     assert any(row[0] == "Biología" for row in individual_rows[2:])
     assert not any(row[0] == "Matemática" for row in individual_rows[2:])
+    individual_conduct = next(
+        table for table in captured["tables"]
+        if table._cellvalues[0][0] == "Parcial"
+    )
+    assert individual_conduct._cellvalues[0] == [
+        "Parcial",
+        "Cuantitativa",
+        "Cualitativa",
+        "Criterios utilizados",
+        "Incidentes registrados",
+        "Observaciones",
+    ]
 
     empty_selection_response = client.post(
         f"/reports/{student['id']}/pdf",
@@ -1144,7 +1192,68 @@ def test_print_reports_limits_pdf_to_selected_classes_and_partials(tmp_path, mon
     empty_rows = empty_summary._cellvalues
     assert empty_rows[0][1] == "Promedio incluido"
     assert not any(row[0] in ("Matemática", "Biología") for row in empty_rows[2:])
+    assert not any(row[0].startswith("Conducta") for row in empty_rows[2:])
     assert len(empty_rows[0]) == 3
+    assert not any(
+        table._cellvalues[0][0] == "Parcial"
+        for table in captured["tables"]
+    )
+    assert not any("conducta" in text.casefold() for text in captured["paragraphs"])
+
+    no_classes_response = client.post(
+        f"/reports/{student['id']}/pdf",
+        data={
+            "class_filter": "1",
+            "partial_filter": "1",
+            "partial": "1",
+        },
+    )
+    assert no_classes_response.status_code == 200
+    assert not any("conducta" in text.casefold() for text in captured["paragraphs"])
+
+    detail_only_response = client.post(
+        f"/reports/{student['id']}/pdf",
+        data={
+            "class_filter": "1",
+            "class_id": str(class_ids["Matemática"]),
+            "partial_filter": "1",
+            "partial": "1",
+            "conduct_filter": "1",
+            "include_conduct": "1",
+            "conduct_field": "criteria",
+        },
+    )
+    assert detail_only_response.status_code == 200
+    detail_only_table = next(
+        table for table in captured["tables"]
+        if table._cellvalues[0][0] == "Parcial"
+    )
+    assert detail_only_table._cellvalues[0] == [
+        "Parcial",
+        "Criterios utilizados",
+    ]
+    assert not any(
+        row[0].startswith("Conducta")
+        for row in captured["tables"][0]._cellvalues[2:]
+    )
+
+    conduct_disabled_response = client.post(
+        f"/reports/{student['id']}/pdf",
+        data={
+            "class_filter": "1",
+            "class_id": str(class_ids["Matemática"]),
+            "partial_filter": "1",
+            "partial": "1",
+            "conduct_filter": "1",
+            "conduct_field": ["quantitative", "incidents"],
+        },
+    )
+    assert conduct_disabled_response.status_code == 200
+    assert not any(
+        table._cellvalues[0][0] == "Parcial"
+        for table in captured["tables"]
+    )
+    assert not any("conducta" in text.casefold() for text in captured["paragraphs"])
 
     batch_empty_response = client.post(
         "/reports/pdf",
