@@ -6,13 +6,13 @@ Explorador de archivos de Windows (clic derecho → **Extraer todo**).
 
 ## Paquetes incluidos
 
-- `python-manager.zip`: contiene `python-manager-26.4.msix`, el instalador de
+- [Descargar `python-manager.zip`](https://github.com/ciprianotoor/notas-estudiantes/raw/refs/heads/main/installer/appsrequeriments/python-manager.zip): contiene `python-manager-26.4.msix`, el instalador de
   Python Install Manager. La versión 26.4 es una beta; para un equipo de
   compilación nuevo, se recomienda descargar una versión estable desde
   [Python para Windows](https://www.python.org/downloads/windows/). El
   proyecto requiere Python 3.11 o superior. Tras instalarlo, comprueba que
   `py -3 --version` funcione.
-- `windows-build-tools.zip`: contiene Inno Setup 6.7.3, Wix CLI y Wix
+- [Descargar `windows-build-tools.zip`](https://github.com/ciprianotoor/notas-estudiantes/raw/refs/heads/main/installer/appsrequeriments/windows-build-tools.zip): contiene Inno Setup 6.7.3, Wix CLI y Wix
   Additional Tools. Inno Setup genera el instalador EXE. WiX es opcional y
   sirve para la ruta MSI descrita abajo.
 
