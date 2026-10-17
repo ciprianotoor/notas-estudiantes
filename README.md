@@ -83,6 +83,10 @@ El instalador funciona en Windows 10 y 11 sin requerir Python, Git ni Docker
 en el equipo docente. La versión compilada se genera en Windows con Python
 3.11+ e [Inno Setup 6](https://jrsoftware.org/isinfo.php).
 
+La compilación puede hacerse desde un equipo con Linux Omarchy y Windows 10
+LTSC en dual boot. Inicia Windows 10 LTSC e instala Python 3.11 o superior,
+Git, [Inno Setup 6](https://jrsoftware.org/isinfo.php) y WiX Toolset.
+
 1. Clona el proyecto y entra en su carpeta:
 
    ```powershell
@@ -95,6 +99,9 @@ en el equipo docente. La versión compilada se genera en Windows con Python
    ```powershell
    PowerShell -ExecutionPolicy Bypass -File .\build_windows.ps1
    ```
+
+El script instala las dependencias de Python, genera el ejecutable y crea el
+instalador MSI. No es necesario ejecutar Docker en Windows para compilarlo.
 
 El instalador MSI generado queda en
 `installer\NotasEstudiantes-Setup.msi`. El usuario solo debe descargarlo,
