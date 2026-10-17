@@ -93,6 +93,11 @@ El instalador generado queda en
 en `%LOCALAPPDATA%\Notas Estudiantes`, crea accesos directos y abre
 `http://127.0.0.1:5000/login`.
 
+También se puede descargar desde GitHub en **Actions**, dentro del flujo
+**Instalador Windows**, como artefacto `NotasEstudiantes-Setup`. Para dejarlo
+como descarga permanente en **Releases**, crea una etiqueta como `v1.0.0`; el
+flujo compilará y adjuntará automáticamente el archivo `.exe`.
+
 La base de datos y los archivos cargados se conservan en la carpeta `data`
 junto al programa. Para actualizar una instalación, realiza primero un
 respaldo desde la interfaz y vuelve a instalar la nueva versión.
@@ -106,5 +111,3 @@ disponible, clona o actualiza el proyecto y conserva la carpeta `data`.
 Para usar la aplicación desde otros equipos de la red, cambia el host del
 lanzador a `0.0.0.0`, permite el puerto 5000 en el Firewall de Windows y
 accede con `http://IP_DEL_EQUIPO:5000`.
-
-Para usarlo en la red local cambia el host del lanzador a `0.0.0.0`, permite el puerto 5000 en el Firewall de Windows y accede desde otra computadora con `http://IP_DEL_EQUIPO:5000`.

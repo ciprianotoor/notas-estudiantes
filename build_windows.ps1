@@ -16,7 +16,12 @@ if (Test-Path installer) { Remove-Item installer -Recurse -Force }
     --add-data "static;static" --hidden-import reportlab.pdfbase._fontdata run_windows.py
 New-Item -ItemType Directory -Force "dist\NotasEstudiantes\data\uploads" | Out-Null
 
-if (Get-Command ISCC.exe -ErrorAction SilentlyContinue) {
-    & ISCC.exe installer.iss
+$iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+if (-not $iscc) {
+    $standardIscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+    if (Test-Path $standardIscc) { $iscc = $standardIscc }
+}
+if ($iscc) {
+    & $iscc installer.iss
     Write-Host "Instalador creado en installer\NotasEstudiantes-Setup.exe"
 } else { Write-Host "Ejecutable listo en dist\NotasEstudiantes" }
