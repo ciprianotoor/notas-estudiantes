@@ -11,6 +11,8 @@ from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image as PDFImage, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from xml.sax.saxutils import escape
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -28,6 +30,17 @@ SECTION_OPTIONS = ("A", "B", "C", "D", "E", "F", "Libre")
 SHIFT_OPTIONS = ("Matutino", "Vespertino", "Despertino", "Nocturno", "Sabatino", "Dominical")
 LEVEL_OPTIONS = ("Inicial", "Primaria", "Secundaria", "Básica", "Multigrado", "Bachillerato")
 TEACHER_LEVEL_OPTIONS = ("Educación inicial", "Primaria", "Secundaria")
+
+# Arial no suele venir instalado en Linux; Liberation Sans es su sustituto
+# compatible y conserva métricas y apariencia muy cercanas para el PDF.
+try:
+    pdfmetrics.registerFont(TTFont("Arial", "/usr/share/fonts/liberation/LiberationSans-Regular.ttf"))
+    pdfmetrics.registerFont(TTFont("Arial-Bold", "/usr/share/fonts/liberation/LiberationSans-Bold.ttf"))
+    PDF_FONT = "Arial"
+    PDF_FONT_BOLD = "Arial-Bold"
+except Exception:
+    PDF_FONT = "Helvetica"
+    PDF_FONT_BOLD = "Helvetica-Bold"
 
 
 def clean_choice(value, allowed, default=""):
@@ -3232,11 +3245,18 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         conduct_by_student.setdefault(row["student_id"], {})[row["partial"]] = dict(row)
     fallback_settings = settings(); output = io.BytesIO()
     document = SimpleDocTemplate(output, pagesize=landscape(letter), rightMargin=.45*inch, leftMargin=.45*inch, topMargin=.4*inch, bottomMargin=.4*inch)
-    styles = getSampleStyleSheet(); center_style = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER); story = []
+    styles = getSampleStyleSheet()
+    for style in styles.byName.values():
+        style.fontName = PDF_FONT
+    styles["Title"].fontName = PDF_FONT_BOLD
+    styles["Heading2"].fontName = PDF_FONT_BOLD
+    styles["Heading3"].fontName = PDF_FONT_BOLD
+    center_style = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER)
+    story = []
     available_width = landscape(letter)[0] - document.leftMargin - document.rightMargin
     cell_style = ParagraphStyle("pdf_cell", parent=styles["Normal"], fontSize=7, leading=8, splitLongWords=1)
     centered_cell_style = ParagraphStyle("pdf_centered_cell", parent=cell_style, alignment=TA_CENTER)
-    header_cell_style = ParagraphStyle("pdf_header_cell", parent=centered_cell_style, fontName="Helvetica-Bold", textColor="white")
+    header_cell_style = ParagraphStyle("pdf_header_cell", parent=centered_cell_style, fontName=PDF_FONT_BOLD, textColor="white")
     header_style = TableStyle([("BACKGROUND", (0,0), (-1,0), "#17365d"), ("TEXTCOLOR", (0,0), (-1,0), "white"), ("GRID", (0,0), (-1,-1), .5, "#b7c3d0"), ("ALIGN", (0,0), (-1,0), "LEFT"), ("ALIGN", (1,1), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("FONTSIZE", (0,0), (-1,-1), 8), ("PADDING", (0,0), (-1,-1), 5)])
     for index, student in enumerate(students):
         if index: story.append(PageBreak())
@@ -3264,7 +3284,8 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         subject_names_list = sorted({subject_names.get(sid, "General") if sid else "General" for sid in report_subject_ids})
         subject_label = ", ".join(subject_names_list) if subject_names_list else "Sin materias registradas"
         partials_label = ", ".join(partial_name(p) for p in selected_partials) if selected_partials else "Ningún parcial"
-        story += [Paragraph(current["school_name"], styles["Title"]), Paragraph("REPORTE ACADÉMICO", styles["Heading2"]), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 10)]
+        report_title = ParagraphStyle("report_title", parent=styles["Heading2"], alignment=TA_CENTER, fontName=PDF_FONT_BOLD, fontSize=16, leading=19)
+        story += [Paragraph(current["school_name"], styles["Title"]), Paragraph("BOLETÍN (REPORTE ACADÉMICO)", report_title), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 10)]
         conduct_entries = conduct_by_student.get(student["id"], {})
         if not conduct_entries and student["conduct_score"] is not None:
             conduct_entries[1] = {"quantitative": student["conduct_score"], "qualitative": student["conduct"] or "Sin registrar", "criteria": student["conduct_criteria"], "incidents": student["conduct_incidents"], "observations": student["observations"]}
@@ -3273,6 +3294,12 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             for key in CONDUCT_DETAIL_FIELDS
             if key in conduct_options["fields"] and key not in {"quantitative", "qualitative"}
         ]
+        conduct_detail_keys = {key for key, _, _ in conduct_fields}
+        has_conduct_details = any(
+            str(entry.get(key) or "").strip()
+            for entry in conduct_entries.values()
+            for key in conduct_detail_keys
+        )
         conduct_data = [[pdf_cell("Parcial", header_cell_style)] + [pdf_cell(label, header_cell_style) for _, label, _ in conduct_fields]]
         for partial in selected_partials:
             entry = conduct_entries.get(partial, {})
@@ -3413,7 +3440,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         if include_conduct:
             rules += " La conducta se registra cualitativamente como desempeño personal y ciudadano."
         story += [Paragraph("Resumen de notas por materia y cortes evaluativos", styles["Heading3"]), summary_table, Spacer(1, 6)]
-        if include_conduct and conduct_fields:
+        if include_conduct and conduct_fields and has_conduct_details:
             story += [Paragraph("La conducta se registra como desempeño personal y ciudadano, de forma cualitativa.", styles["Normal"]), Spacer(1, 8), Paragraph("Detalle de conducta", styles["Heading3"]), conduct_table, Spacer(1, 10)]
         if len(extraordinary) > 1:
             story += [Paragraph("Notas extraordinarias registradas", styles["Heading3"]), extraordinary_table, Spacer(1, 10)]
