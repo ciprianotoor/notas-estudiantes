@@ -25,3 +25,14 @@ if ($iscc) {
     & $iscc installer.iss
     Write-Host "Instalador creado en installer\NotasEstudiantes-Setup.exe"
 } else { Write-Host "Ejecutable listo en dist\NotasEstudiantes" }
+
+$heat = Get-Command heat.exe -ErrorAction SilentlyContinue
+$candle = Get-Command candle.exe -ErrorAction SilentlyContinue
+$light = Get-Command light.exe -ErrorAction SilentlyContinue
+if ($heat -and $candle -and $light) {
+    New-Item -ItemType Directory -Force installer | Out-Null
+    & $heat dir "dist\NotasEstudiantes" -cg AppFiles -dr INSTALLFOLDER -var var.SourceDir -gg -srd -sfrag -out files.wxs
+    & $candle Product.wxs files.wxs -dSourceDir="$((Get-Location).Path)\dist\NotasEstudiantes" -out build\
+    & $light Product.wixobj files.wixobj -out installer\NotasEstudiantes-Setup.msi
+    Write-Host "Instalador MSI creado en installer\NotasEstudiantes-Setup.msi"
+} else { Write-Host "WiX no está instalado: no se generó el MSI." }

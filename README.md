@@ -96,21 +96,23 @@ en el equipo docente. La versión compilada se genera en Windows con Python
    PowerShell -ExecutionPolicy Bypass -File .\build_windows.ps1
    ```
 
-El instalador generado queda en
-`installer\NotasEstudiantes-Setup.exe`. La aplicación se instala por usuario
+El instalador MSI generado queda en
+`installer\NotasEstudiantes-Setup.msi`. El usuario solo debe descargarlo,
+abrirlo y seguir el asistente. La aplicación se instala por usuario
 en `%LOCALAPPDATA%\Notas Estudiantes`, crea accesos directos y abre
 `http://127.0.0.1:5000/login`.
 
 También se puede descargar desde GitHub en **Actions**, dentro del flujo
-**Instalador Windows**, como artefacto `NotasEstudiantes-Setup`. Para dejarlo
+**Instalador Windows**, como artefacto `NotasEstudiantes-Setup`. El archivo
+descargado será un `.zip` que contiene el MSI. Para dejarlo
 como descarga permanente en **Releases**, crea una etiqueta como `v1.0.0`; el
-flujo compilará y adjuntará automáticamente el archivo `.exe`.
+flujo compilará y adjuntará automáticamente el archivo `.msi`.
 
 > **Aviso:** el instalador disponible es una muestra de la versión actual del
 > proyecto. La aplicación continúa en desarrollo y puede recibir mejoras,
 > correcciones y cambios de funcionamiento. Después de actualizar el código,
 > es necesario volver a compilar el instalador siguiendo estas instrucciones
-> para generar un `.exe` actualizado.
+> para generar un `.msi` actualizado.
 
 La base de datos y los archivos cargados se conservan en la carpeta `data`
 junto al programa. Para actualizar una instalación, realiza primero un

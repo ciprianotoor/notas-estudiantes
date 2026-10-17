@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="Notas Estudiantes" Language="3082" Version="1.0.0" Manufacturer="Cipriano" UpgradeCode="B9AF1C1A-EDC7-4A3E-9A17-5C86BC7DBB56">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" />
+    <MajorUpgrade DowngradeErrorMessage="Ya existe una versión más reciente de Notas Estudiantes." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="INSTALLFOLDER" Name="Notas Estudiantes" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ProgramMenuDir" Name="Notas Estudiantes" />
+      </Directory>
+      <Directory Id="DesktopFolder" />
+    </Directory>
+
+    <Feature Id="MainFeature" Title="Notas Estudiantes" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="Shortcuts" />
+    </Feature>
+
+    <Component Id="Shortcuts" Directory="ProgramMenuDir" Guid="*">
+      <Shortcut Id="StartMenuShortcut" Name="Notas Estudiantes" Description="Abrir Notas Estudiantes" Target="[INSTALLFOLDER]NotasEstudiantes.exe" WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="Notas Estudiantes" Description="Abrir Notas Estudiantes" Target="[INSTALLFOLDER]NotasEstudiantes.exe" WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU" Key="Software\NotasEstudiantes" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Product>
+</Wix>
