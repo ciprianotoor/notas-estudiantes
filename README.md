@@ -106,6 +106,12 @@ También se puede descargar desde GitHub en **Actions**, dentro del flujo
 como descarga permanente en **Releases**, crea una etiqueta como `v1.0.0`; el
 flujo compilará y adjuntará automáticamente el archivo `.exe`.
 
+> **Aviso:** el instalador disponible es una muestra de la versión actual del
+> proyecto. La aplicación continúa en desarrollo y puede recibir mejoras,
+> correcciones y cambios de funcionamiento. Después de actualizar el código,
+> es necesario volver a compilar el instalador siguiendo estas instrucciones
+> para generar un `.exe` actualizado.
+
 La base de datos y los archivos cargados se conservan en la carpeta `data`
 junto al programa. Para actualizar una instalación, realiza primero un
 respaldo desde la interfaz y vuelve a instalar la nueva versión.
