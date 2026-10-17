@@ -2,6 +2,14 @@
 
 Aplicación Flask para gestionar grupos, matrículas, asignaturas, notas por parciales, conducta y boletas académicas.
 
+## Licencia y autoría
+
+Este proyecto fue creado y es mantenido por **Cipriano** (`ciprianotoor`). Se
+distribuye bajo la [licencia MIT](LICENSE), que permite su uso, modificación y
+distribución libre conservando el aviso de copyright. El desarrollo contó con
+asistencia de **OpenAI Codex**. Consulta [NOTICE.md](NOTICE.md) para conocer
+los términos de atribución.
+
 ## Requisitos
 
 - Python 3.10 o superior (recomendado 3.11+).
