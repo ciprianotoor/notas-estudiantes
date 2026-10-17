@@ -9,7 +9,8 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) { py -3 -m venv .venv }
 & .venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
 if (Test-Path build) { Remove-Item build -Recurse -Force }
 if (Test-Path dist) { Remove-Item dist -Recurse -Force }
-if (Test-Path installer) { Remove-Item installer -Recurse -Force }
+# Keep installer/appsrequeriments and other supporting files when rebuilding.
+New-Item -ItemType Directory -Force "installer" | Out-Null
 
 & .venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onedir `
     --name NotasEstudiantes --add-data "templates;templates" `

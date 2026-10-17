@@ -77,15 +77,12 @@ Para producción usa un servidor WSGI detrás de un proxy, define una `SECRET_KE
 
 ## Instalación en Windows
 
-### Instalador autónomo recomendado
+### Compilar el instalador de Windows
 
-El instalador funciona en Windows 10 y 11 sin requerir Python, Git ni Docker
-en el equipo docente. La versión compilada se genera en Windows con Python
-3.11+ e [Inno Setup 6](https://jrsoftware.org/isinfo.php).
-
-La compilación puede hacerse desde un equipo con Linux Omarchy y Windows 10
-LTSC en dual boot. Inicia Windows 10 LTSC e instala Python 3.11 o superior,
-Git, [Inno Setup 6](https://jrsoftware.org/isinfo.php) y WiX Toolset.
+La compilación se hace en Windows 10 u 11. En el equipo donde se compila se
+necesitan Git, Python 3.11 o superior e
+[Inno Setup 6](https://jrsoftware.org/isdl.php). El equipo que usará la
+aplicación no necesita Python, Git ni Docker.
 
 1. Clona el proyecto y entra en su carpeta:
 
@@ -94,36 +91,37 @@ Git, [Inno Setup 6](https://jrsoftware.org/isinfo.php) y WiX Toolset.
    cd notas-estudiantes
    ```
 
-2. Ejecuta el compilador:
+2. Ejecuta el script de compilación:
 
    ```powershell
-   PowerShell -ExecutionPolicy Bypass -File .\build_windows.ps1
+   powershell -ExecutionPolicy Bypass -File .\build_windows.ps1
    ```
 
-El script instala las dependencias de Python, genera el ejecutable y crea el
-instalador MSI. No es necesario ejecutar Docker en Windows para compilarlo.
+El script instala las dependencias de Python desde `requirements.txt`, crea el
+ejecutable con PyInstaller y, si encuentra `ISCC.exe`, genera
+`installer\NotasEstudiantes-Setup.exe` con Inno Setup. WiX es opcional y se
+usa para producir también el MSI. El script usa las herramientas `heat.exe`,
+`candle.exe` y `light.exe` de WiX v3; tener instalado `wix-cli-x64.msi` por sí
+solo no garantiza que esas tres herramientas estén disponibles.
 
-El instalador MSI generado queda en
-`installer\NotasEstudiantes-Setup.msi`. El usuario solo debe descargarlo,
-abrirlo y seguir el asistente. La aplicación se instala por usuario
-en `%LOCALAPPDATA%\Notas Estudiantes`, crea accesos directos y abre
-`http://127.0.0.1:5000/login`.
+Los paquetes y enlaces oficiales para preparar el equipo están en
+[`installer/appsrequeriments/README.md`](installer/appsrequeriments/README.md).
+Se pueden descargar desde allí por separado o extraer los ZIP incluidos. No
+es necesario descargar ni instalar WiX para generar el instalador EXE.
 
-También se puede descargar desde GitHub en **Actions**, dentro del flujo
-**Instalador Windows**, como artefacto `NotasEstudiantes-Setup`. El archivo
-descargado será un `.zip` que contiene el MSI. Para dejarlo
-como descarga permanente en **Releases**, crea una etiqueta como `v1.0.0`; el
-flujo compilará y adjuntará automáticamente el archivo `.msi`.
+La compilación realizada generó `dist\NotasEstudiantes` y el instalador EXE
+de aproximadamente 19 MB. El ejecutable es de tipo `onedir`: sus archivos de
+soporte quedan dentro de la carpeta `_internal`, por lo que no se debe copiar
+solo `NotasEstudiantes.exe`. La salida inspeccionada incluye `python314.dll`,
+lo que confirma que esa compilación se hizo con Python 3.14. Al repetir el
+proceso, el script limpia `build` y `dist` pero conserva
+`installer/appsrequeriments`.
 
-> **Aviso:** el instalador disponible es una muestra de la versión actual del
-> proyecto. La aplicación continúa en desarrollo y puede recibir mejoras,
-> correcciones y cambios de funcionamiento. Después de actualizar el código,
-> es necesario volver a compilar el instalador siguiendo estas instrucciones
-> para generar un `.msi` actualizado.
-
-La base de datos y los archivos cargados se conservan en la carpeta `data`
-junto al programa. Para actualizar una instalación, realiza primero un
-respaldo desde la interfaz y vuelve a instalar la nueva versión.
+El instalador para docentes se distribuye en GitHub en **Actions**, dentro del
+flujo **Instalador Windows**, o como MSI en **Releases** al publicar una
+etiqueta `v*`. La base de datos y los archivos cargados se conservan en la
+carpeta `data` junto al programa. Antes de actualizar una instalación,
+realiza un respaldo desde la interfaz.
 
 ### Instalación con Docker Desktop
 
