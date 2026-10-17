@@ -74,10 +74,13 @@ Para una instalación sencilla desde GitHub con Docker Desktop, descarga
 indicaciones. El script instala Docker Desktop mediante `winget` si está
 disponible, clona o actualiza el proyecto y conserva la carpeta `data`.
 
-La compilación debe hacerse en Windows 10/11. Requiere Python 3.11+, Git e Inno Setup 6 (<https://jrsoftware.org/isinfo.php>).
+También existe un instalador autónomo que no requiere Python, Git ni Docker
+en el equipo docente. La compilación debe hacerse en Windows 10/11 y requiere
+Python 3.11+ e Inno Setup 6 (<https://jrsoftware.org/isinfo.php>).
 
 1. En PowerShell clona el proyecto y prepara el entorno: `git clone https://github.com/ciprianotoor/notas-estudiantes.git`, `cd notas-estudiantes`, `py -3 -m venv .venv`, `.venv\Scripts\Activate.ps1`, `pip install -r requirements.txt` y `pip install pyinstaller`.
-2. Crea `run_windows.py` en la raíz con este contenido:
+2. `run_windows.py` ya está incluido y guarda la base de datos y los archivos
+subidos en la carpeta `data` junto al programa.
 
 ```python
 import os, threading, time, webbrowser
@@ -93,9 +96,10 @@ if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)
 ```
 
-3. Genera el ejecutable desde PowerShell: `pyinstaller --noconfirm --clean --onedir --name NotasEstudiantes --add-data "templates;templates" --add-data "static;static" --add-data "data;data" run_windows.py`.
+3. Ejecuta en PowerShell: `PowerShell -ExecutionPolicy Bypass -File .\build_windows.ps1`.
 4. Prueba `dist\NotasEstudiantes\NotasEstudiantes.exe`. La base debe permanecer fuera del ejecutable en `dist\NotasEstudiantes\data\notas.db`.
-5. En Inno Setup crea `installer.iss` con:
+5. `installer.iss` ya está incluido. Si Inno Setup no fue detectado durante la
+compilación, ábrelo y pulsa **Compile**.
 
 ```ini
 [Setup]
