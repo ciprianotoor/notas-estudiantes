@@ -67,63 +67,44 @@ La guía completa está en [`docs/GUIA_USO.md`](docs/GUIA_USO.md) y [`docs/GUIA_
 
 Para producción usa un servidor WSGI detrás de un proxy, define una `SECRET_KEY` segura, protege SQLite y realiza respaldos antes de migraciones o eliminaciones.
 
-## Crear instalador para Windows
+## Instalación en Windows
 
-Para una instalación sencilla desde GitHub con Docker Desktop, descarga
-[`instalar_windows.bat`](instalar_windows.bat), ejecútalo y sigue las
-indicaciones. El script instala Docker Desktop mediante `winget` si está
+### Instalador autónomo recomendado
+
+El instalador funciona en Windows 10 y 11 sin requerir Python, Git ni Docker
+en el equipo docente. La versión compilada se genera en Windows con Python
+3.11+ e [Inno Setup 6](https://jrsoftware.org/isinfo.php).
+
+1. Clona el proyecto y entra en su carpeta:
+
+   ```powershell
+   git clone https://github.com/ciprianotoor/notas-estudiantes.git
+   cd notas-estudiantes
+   ```
+
+2. Ejecuta el compilador:
+
+   ```powershell
+   PowerShell -ExecutionPolicy Bypass -File .\build_windows.ps1
+   ```
+
+El instalador generado queda en
+`installer\NotasEstudiantes-Setup.exe`. La aplicación se instala por usuario
+en `%LOCALAPPDATA%\Notas Estudiantes`, crea accesos directos y abre
+`http://127.0.0.1:5000/login`.
+
+La base de datos y los archivos cargados se conservan en la carpeta `data`
+junto al programa. Para actualizar una instalación, realiza primero un
+respaldo desde la interfaz y vuelve a instalar la nueva versión.
+
+### Instalación con Docker Desktop
+
+Como alternativa, descarga [`instalar_windows.bat`](instalar_windows.bat) y
+ejecútalo. El script instala Docker Desktop mediante `winget` si está
 disponible, clona o actualiza el proyecto y conserva la carpeta `data`.
 
-También existe un instalador autónomo que no requiere Python, Git ni Docker
-en el equipo docente. La compilación debe hacerse en Windows 10/11 y requiere
-Python 3.11+ e Inno Setup 6 (<https://jrsoftware.org/isinfo.php>).
-
-1. En PowerShell clona el proyecto y prepara el entorno: `git clone https://github.com/ciprianotoor/notas-estudiantes.git`, `cd notas-estudiantes`, `py -3 -m venv .venv`, `.venv\Scripts\Activate.ps1`, `pip install -r requirements.txt` y `pip install pyinstaller`.
-2. `run_windows.py` ya está incluido y guarda la base de datos y los archivos
-subidos en la carpeta `data` junto al programa.
-
-```python
-import os, threading, time, webbrowser
-from app import app
-
-def open_browser():
-    time.sleep(2)
-    webbrowser.open("http://127.0.0.1:5000")
-
-if __name__ == "__main__":
-    os.makedirs("data", exist_ok=True)
-    threading.Thread(target=open_browser, daemon=True).start()
-    app.run(host="127.0.0.1", port=5000, debug=False)
-```
-
-3. Ejecuta en PowerShell: `PowerShell -ExecutionPolicy Bypass -File .\build_windows.ps1`.
-4. Prueba `dist\NotasEstudiantes\NotasEstudiantes.exe`. La base debe permanecer fuera del ejecutable en `dist\NotasEstudiantes\data\notas.db`.
-5. `installer.iss` ya está incluido. Si Inno Setup no fue detectado durante la
-compilación, ábrelo y pulsa **Compile**.
-
-```ini
-[Setup]
-AppName=Notas Estudiantes
-AppVersion=1.0.0
-DefaultDirName={autopf}\Notas Estudiantes
-DefaultGroupName=Notas Estudiantes
-OutputDir=installer
-OutputBaseFilename=NotasEstudiantes-Setup
-Compression=lzma
-SolidCompression=yes
-
-[Files]
-Source: "dist\NotasEstudiantes\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
-
-[Icons]
-Name: "{group}\Notas Estudiantes"; Filename: "{app}\NotasEstudiantes.exe"
-Name: "{autodesktop}\Notas Estudiantes"; Filename: "{app}\NotasEstudiantes.exe"
-
-[Run]
-Filename: "{app}\NotasEstudiantes.exe"; Flags: nowait postinstall skipifsilent
-```
-
-6. Abre `installer.iss` en Inno Setup, pulsa **Compile** y distribuye `installer\NotasEstudiantes-Setup.exe`.
-7. Prueba en un Windows sin Python: inicia la aplicación, crea datos, reinicia y confirma que `data\notas.db` conserva la información. Comprueba también PDF, exportación y respaldos.
+Para usar la aplicación desde otros equipos de la red, cambia el host del
+lanzador a `0.0.0.0`, permite el puerto 5000 en el Firewall de Windows y
+accede con `http://IP_DEL_EQUIPO:5000`.
 
 Para usarlo en la red local cambia el host del lanzador a `0.0.0.0`, permite el puerto 5000 en el Firewall de Windows y accede desde otra computadora con `http://IP_DEL_EQUIPO:5000`.
