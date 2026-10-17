@@ -3436,7 +3436,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             for row_index, row in enumerate(extraordinary)
         ]
         extraordinary_table = Table(extraordinary_cells, colWidths=extraordinary_widths); extraordinary_table.setStyle(header_style)
-        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final del año promedia los cuatro cortes registrados; el promedio mostrado considera los parciales incluidos. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado."
+        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final del año promedia los cuatro cortes registrados; el promedio mostrado considera los parciales incluidos. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado. La conducta aparece una sola vez en la tabla principal; sus criterios, incidentes y observaciones solo se muestran cuando fueron registrados."
         if include_conduct:
             rules += " La conducta se registra cualitativamente como desempeño personal y ciudadano."
         story += [Paragraph("Resumen de notas por materia y cortes evaluativos", styles["Heading3"]), summary_table, Spacer(1, 6)]

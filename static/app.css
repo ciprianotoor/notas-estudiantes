@@ -1,0 +1,7 @@
+/* Base compartida para todas las pantallas */
+:root{--ui-blue:#1769e0;--ui-navy:#102a43;--ui-line:#d9e2ec;--ui-muted:#52677f;--ui-radius:10px}
+*{box-sizing:border-box}
+button,.button{min-height:44px;font-weight:750}
+input,select,textarea{min-height:44px}
+button:focus-visible,.button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #0b63ce;outline-offset:2px}
+@media(max-width:760px){.wrap{padding-left:.75rem;padding-right:.75rem}.actions{display:grid;grid-template-columns:1fr}.actions>*{width:100%!important}.card>table{display:block;overflow-x:auto;white-space:nowrap}}
