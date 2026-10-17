@@ -2141,13 +2141,15 @@ def grades(student_id):
             return redirect(url_for("grades", student_id=student_id, subject_id=subject_id))
     partials, final = subject_summary(student_id, selected_subject_id)
     with db() as connection:
+        conduct_evaluations = {row["partial"]: row for row in connection.execute(
+            "SELECT * FROM conduct_evaluations WHERE student_id=? ORDER BY partial", (student_id,)).fetchall()}
         history = connection.execute("""
             SELECT ga.*, t.name AS actor_name
             FROM grade_audit ga LEFT JOIN teachers t ON t.id=ga.actor_teacher_id
             WHERE ga.student_id=? ORDER BY ga.created_at DESC, ga.id DESC LIMIT 30
         """, (student_id,)).fetchall()
     selected_subject_name = next((row["name"] for row in subjects if row["id"] == selected_subject_id), "")
-    return render_template("grades.html", student=student, partials=partials, final=final, history=history, subjects=subjects, current_subject_id=selected_subject_id, selected_subject_name=selected_subject_name, is_conduct=selected_subject_name.strip().lower() == "conducta", is_guide=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), is_director=teacher_is_director(teacher_id), is_secretary=teacher_is_secretary(teacher_id), can_edit_grades=can_edit_grades)
+    return render_template("grades.html", student=student, partials=partials, final=final, conduct_evaluations=conduct_evaluations, history=history, subjects=subjects, current_subject_id=selected_subject_id, selected_subject_name=selected_subject_name, is_conduct=selected_subject_name.strip().lower() == "conducta", is_guide=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), is_director=teacher_is_director(teacher_id), is_secretary=teacher_is_secretary(teacher_id), can_edit_grades=can_edit_grades)
 
 
 @app.post("/students/<int:student_id>/profile")
@@ -3266,13 +3268,10 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         conduct_entries = conduct_by_student.get(student["id"], {})
         if not conduct_entries and student["conduct_score"] is not None:
             conduct_entries[1] = {"quantitative": student["conduct_score"], "qualitative": student["conduct"] or "Sin registrar", "criteria": student["conduct_criteria"], "incidents": student["conduct_incidents"], "observations": student["observations"]}
-        first_conduct = conduct_entries.get(1, {})
-        conduct_label = qualitative_learning_label(first_conduct.get("quantitative")) if first_conduct.get("quantitative") is not None else (student["conduct"] or "Sin registrar")
-        conduct_quantitative = f"{conduct_entries.get(1, {}).get('quantitative', student['conduct_score']):.2f} / 100" if conduct_entries.get(1, {}).get('quantitative', student['conduct_score']) is not None else "Sin registrar"
         conduct_fields = [
             (key, *CONDUCT_DETAIL_FIELDS[key])
             for key in CONDUCT_DETAIL_FIELDS
-            if key in conduct_options["fields"]
+            if key in conduct_options["fields"] and key not in {"quantitative", "qualitative"}
         ]
         conduct_data = [[pdf_cell("Parcial", header_cell_style)] + [pdf_cell(label, header_cell_style) for _, label, _ in conduct_fields]]
         for partial in selected_partials:
@@ -3293,9 +3292,8 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         report_partials = selected_partials
         include_conduct = bool(
             conduct_options["include"]
-            and conduct_fields
+            and conduct_options["fields"]
             and report_partials
-            and (report_subject_ids or selected_class_ids)
         )
         final_label = "Nota final" if report_partials == list(PARTIALS) else "Promedio incluido"
         summary_data = [
@@ -3342,24 +3340,24 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         if len(summary_data) == 2:
             summary_data.append(["-"] + ["-"] * (2 * (len(report_partials) + 1)))
             detail_data.append(["-", "-", "Sin registros", "-", "-"])
-        if include_conduct and (
-            "quantitative" in conduct_options["fields"]
-            or "qualitative" in conduct_options["fields"]
-        ):
+        if include_conduct and conduct_options["fields"] & {"quantitative", "qualitative"}:
             conduct_row = ["Conducta (desempeño personal y ciudadano)"]
+            conduct_scores = []
             for partial in report_partials:
                 entry = conduct_entries.get(partial, {})
-                conduct_quantitative_short = f"{entry['quantitative']:.2f}" if entry.get("quantitative") is not None else "Sin calificación"
-                conduct_qualitative = qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración"
+                if entry.get("quantitative") is not None:
+                    conduct_scores.append(float(entry["quantitative"]))
+                quantitative = f"{entry['quantitative']:.2f}" if entry.get("quantitative") is not None else "Sin calificación"
+                qualitative = qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración"
                 conduct_row.extend([
-                    conduct_quantitative_short if "quantitative" in conduct_options["fields"] else "-",
-                    conduct_qualitative if "qualitative" in conduct_options["fields"] else "-",
+                    quantitative if "quantitative" in conduct_options["fields"] else "-",
+                    qualitative if "qualitative" in conduct_options["fields"] else "-",
                 ])
-            final_conduct = conduct_entries.get(report_partials[-1], {})
+            final_conduct_score = sum(conduct_scores) / len(conduct_scores) if conduct_scores else None
             conduct_row.extend([
-                "-",
-                (final_conduct.get("qualitative") or "-")
-                if "qualitative" in conduct_options["fields"] else "-",
+                f"{final_conduct_score:.2f}" if "quantitative" in conduct_options["fields"] and final_conduct_score is not None else "-",
+                qualitative_learning_label(final_conduct_score)
+                if "qualitative" in conduct_options["fields"] and final_conduct_score is not None else "-",
             ])
             summary_data.append(conduct_row)
         conduct_width_weights = [.85] + [width for _, _, width in conduct_fields]
@@ -3415,7 +3413,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         if include_conduct:
             rules += " La conducta se registra cualitativamente como desempeño personal y ciudadano."
         story += [Paragraph("Resumen de notas por materia y cortes evaluativos", styles["Heading3"]), summary_table, Spacer(1, 6)]
-        if include_conduct:
+        if include_conduct and conduct_fields:
             story += [Paragraph("La conducta se registra como desempeño personal y ciudadano, de forma cualitativa.", styles["Normal"]), Spacer(1, 8), Paragraph("Detalle de conducta", styles["Heading3"]), conduct_table, Spacer(1, 10)]
         if len(extraordinary) > 1:
             story += [Paragraph("Notas extraordinarias registradas", styles["Heading3"]), extraordinary_table, Spacer(1, 10)]
