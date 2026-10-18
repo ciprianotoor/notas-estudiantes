@@ -3555,7 +3555,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                 ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]))
             scale_table.hAlign = "CENTER"
-            conduct_panel += [Spacer(1, 8), Paragraph("ESCALAS Y EQUIVALENCIAS", panel_title), scale_table]
+            identity += [Spacer(1, 10), Paragraph("ESCALAS Y EQUIVALENCIAS", panel_title), scale_table]
             notes = panel([
                 Paragraph("OBSERVACIONES Y CIERRE", panel_title),
                 Paragraph(f"Criterios evaluativos: {current['evaluation_criteria'] or 'No registrados'}", panel_style),
