@@ -2062,10 +2062,10 @@ def change_student_classes(student_id):
 @teacher_required
 def grades(student_id):
     teacher_id = session.get("teacher_id")
-    can_edit_grades = (get_teacher_role(teacher_id) in ("teacher", "guide")
-                       and not teacher_is_admin(teacher_id))
+    can_edit_grades = (teacher_is_admin(teacher_id)
+                       or get_teacher_role(teacher_id) in ("teacher", "guide"))
     if request.method == "POST" and not can_edit_grades:
-        flash("Solo el docente de materia puede modificar las notas. Esta cuenta tiene acceso de lectura.", "error")
+        flash("Esta cuenta no puede modificar las notas.", "error")
         return redirect(url_for("grades", student_id=student_id, subject_id=request.form.get("subject_id", type=int)))
     if not teacher_can_access_student(student_id, teacher_id):
         flash("No tienes acceso a este estudiante.", "error")
@@ -2220,7 +2220,7 @@ def update_profile(student_id):
 @teacher_required
 def delete_partial_grade(student_id, partial):
     teacher_id = session.get("teacher_id")
-    if get_teacher_role(teacher_id) not in ("teacher", "guide") or teacher_is_admin(teacher_id):
+    if get_teacher_role(teacher_id) not in ("teacher", "guide") and not teacher_is_admin(teacher_id):
         flash("Esta cuenta no puede eliminar registros de notas.", "error")
         return redirect(url_for("grades", student_id=student_id))
     subject_id = request.form.get("subject_id", type=int)
@@ -2673,27 +2673,34 @@ def edit_teacher(teacher_id):
 
 
 @app.get("/export.xlsx")
-@guide_required
+@teacher_required
 def export_xlsx():
+    teacher_id = session.get("teacher_id")
+    if not (teacher_is_admin(teacher_id) or is_guide_teacher(teacher_id)):
+        flash("Solo el administrador o el docente guía pueden exportar datos.", "error")
+        return redirect(url_for("index"))
     workbook = Workbook()
     students_sheet = workbook.active
     students_sheet.title = "Estudiantes"
     students_sheet.append(["Código", "Nombre", "Materia", "Grupo", "Sección", "Conducta", "Observaciones"])
-    teacher_id = session.get("teacher_id")
     with db() as connection:
-        students = connection.execute("""
+        student_query = """
             SELECT s.*, g.name AS group_name FROM students s
             LEFT JOIN groups g ON g.id=s.group_id
-            WHERE g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?)
+            {scope}
             ORDER BY s.name
-        """, (teacher_id, teacher_id)).fetchall()
-        grades = connection.execute("""
+        """
+        grade_query = """
             SELECT s.code, pg.* FROM partial_grades pg
             JOIN students s ON s.id=pg.student_id
             LEFT JOIN groups g ON g.id=s.group_id
-            WHERE g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?)
+            {scope}
             ORDER BY s.name, pg.partial
-        """, (teacher_id, teacher_id)).fetchall()
+        """
+        scope = "" if teacher_is_admin(teacher_id) else "WHERE g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?)"
+        params = () if teacher_is_admin(teacher_id) else (teacher_id, teacher_id)
+        students = connection.execute(student_query.format(scope=scope), params).fetchall()
+        grades = connection.execute(grade_query.format(scope=scope), params).fetchall()
     for student in students:
         students_sheet.append([student["code"], student["name"], student["subject"], student["group_name"] or "", student["section"], student["conduct"], student["observations"]])
     grades_sheet = workbook.create_sheet("Notas")
@@ -2708,6 +2715,20 @@ def export_xlsx():
     config_sheet.append(["Campo", "Valor"])
     for key in ("school_name", "teacher_name", "group_name", "evaluation_criteria"):
         config_sheet.append([key, current[key]])
+    if teacher_is_admin(teacher_id):
+        for title, query in {
+            "Usuarios": "SELECT id,name,email,account_type,is_admin,employment_status FROM teachers ORDER BY name",
+            "Grupos": "SELECT id,name,grade,section,academic_year,teacher_id FROM groups ORDER BY name",
+            "Materias": "SELECT id,name,grade,year,active FROM subjects ORDER BY name",
+            "Clases": "SELECT id,name,subject_id,grade,year,section,group_id,teacher_id FROM classes ORDER BY name",
+            "Auditoría": "SELECT * FROM grade_audit ORDER BY created_at DESC",
+        }.items():
+            sheet = workbook.create_sheet(title)
+            rows = connection.execute(query).fetchall()
+            if rows:
+                sheet.append(list(rows[0].keys()))
+                for row in rows:
+                    sheet.append([row[key] for key in row.keys()])
     for sheet in workbook.worksheets:
         sheet.freeze_panes = "A2"
         for column in sheet.columns:
@@ -2768,7 +2789,7 @@ def backup_database():
 
 
 @app.post("/import.xlsx")
-@guide_required
+@teacher_required
 def import_xlsx():
     uploaded = request.files.get("workbook")
     if not uploaded or not uploaded.filename.lower().endswith((".xlsx", ".xlsm")):
@@ -2780,6 +2801,9 @@ def import_xlsx():
         grades_sheet = workbook["Notas"]
         with db() as connection:
             teacher_id = session.get("teacher_id")
+            if not (teacher_is_admin(teacher_id) or is_guide_teacher(teacher_id)):
+                flash("Solo el administrador o el docente guía pueden importar datos.", "error")
+                return redirect(url_for("config"))
             student_ids = {}
             for row in students_sheet.iter_rows(min_row=2, values_only=True):
                 code, name, subject, group_name, section, conduct, observations = (str(value or "").strip() for value in (list(row) + [""] * 7)[:7])

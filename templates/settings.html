@@ -26,6 +26,7 @@
   <p class="muted">El archivo Excel funciona con Microsoft Excel y LibreOffice Calc. Incluye estudiantes, grupos, notas, fechas, estados y configuración.</p>
   <div class="actions">
     <a class="button" href="{{ url_for('export_xlsx') }}">Exportar a Excel</a>
+    <a class="button secondary" href="{{ url_for('database_admin') }}">Administrar base de datos</a>
     <a class="button secondary" href="{{ url_for('backup_database') }}">Respaldar base de datos</a>
     <form method="post" action="{{ url_for('import_xlsx') }}" enctype="multipart/form-data" style="display:inline-block">
       <input type="file" name="workbook" accept=".xlsx,.xlsm"> <button>Importar</button>
