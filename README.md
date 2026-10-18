@@ -67,10 +67,13 @@ sufijo `-a4-plegable`.
 
 La boleta A4 se organiza en cuatro caras: portada, información general,
 evaluación académica/conducta y observaciones/cierre. Incluye año lectivo,
-grupo, grado, sección, corte, escala de equivalencias, nomenclatura (`CN`,
-`CL`, `SC`, `NR`), firmas por corte del docente guía, padre/madre/tutor y
-estudiante, además de observaciones y sello del centro. Las notas se imprimen
-sin decimales; los cálculos internos conservan su precisión.
+grupo, grado, sección, corte y la tabla de escala junto a los datos del
+estudiante. Usa la nomenclatura `CN`, `CL`, `SC` y `NR`; las notas se imprimen
+sin decimales, aunque los cálculos internos conservan su precisión.
+
+Cada corte tiene casillas equilibradas para las firmas del docente guía,
+padre/madre/tutor y estudiante. La boleta también incluye conducta, criterios,
+incidentes, observaciones, recomendaciones y sello del centro.
 
 El diseño está inspirado en referencias públicas de evaluación escolar de
 Nicaragua, pero no representa una boleta oficial emitida por el MINED.
