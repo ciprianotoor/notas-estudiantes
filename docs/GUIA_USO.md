@@ -23,13 +23,15 @@ Requiere Python 3.10+, SQLite y, opcionalmente, Docker Compose. Instalación loc
 
 ## Evaluación y boleta
 
-La boleta contiene materias por fila y columnas paralelas cuantitativa/cualitativa para cada parcial. La nota final promedia los cuatro parciales. Equivalencias: AA 90–100, AS 76–89, AF 60–75, AI menos de 60.
+La boleta escolar A4 plegable se organiza en cuatro caras: portada, información general, evaluación académica con conducta y observaciones/cierre. La tabla de escalas usa la nomenclatura MINED: Aprendizaje Avanzado (AA, 90–100), Aprendizaje Satisfactorio (AS, 76–89), Aprendizaje Fundamental (AF, 60–75) y Aprendizaje Inicial (AI, menos de 60).
+
+En la boleta, `CN` significa cuantitativa, `CL` cualitativa, `SC` sin calificación y `NR` no registrado. Las notas se imprimen sin decimales. Cada parcial incluye casillas de firma para docente guía, padre/madre/tutor y estudiante. La escala de equivalencias aparece junto a los datos generales del estudiante.
 
 Conducta conserva cuantitativa, cualitativa, criterios, incidentes y observaciones por parcial. Los criterios orientativos son relaciones interpersonales, responsabilidad individual y compartida, participación extracurricular, solidaridad y colaboración, asistencia y puntualidad, orden y aseo.
 
 ## Bajas, consulta e impresión
 
-La baja conserva notas y expediente. Desde “Dados de baja” se puede restablecer matrícula, exportar CSV, imprimir o eliminar definitivamente; esto último solo Admin/Dirección y con confirmación. Al imprimir una boleta individual o en lote puedes elegir clases y parciales, además de incluir u ocultar Conducta y seleccionar qué datos mostrar: cuantitativa, cualitativa, criterios utilizados, incidentes y observaciones. En “Imprimir notas” se pueden filtrar y seleccionar varios estudiantes; cada uno sale en su propia página del PDF.
+La baja conserva notas y expediente. Desde “Dados de baja” se puede restablecer matrícula, exportar CSV, imprimir o eliminar definitivamente; esto último solo Admin/Dirección y con confirmación. Al imprimir una boleta individual o en lote puedes elegir clases y parciales, además de incluir u ocultar Conducta y seleccionar qué datos mostrar: cuantitativa, cualitativa, criterios utilizados, incidentes y observaciones. En “Imprimir notas” se pueden filtrar y seleccionar varios estudiantes; cada uno sale en su propia página del PDF. Las boletas individuales se descargan con nombre y grado, por ejemplo `boletin-Nombre_Estudiante-9no.pdf`; la versión plegable añade `-a4-plegable`.
 
 ## Tema, ayuda y pruebas
 
