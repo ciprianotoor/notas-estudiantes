@@ -2,6 +2,7 @@
 {% block title %}Imprimir notas{% endblock %}
 {% block content %}
 <h1>Imprimir notas</h1>
+<p><a class="button secondary" href="{{ url_for('certificates') }}">Generar constancia de calificaciones</a></p>
 <div class="card">
   <form method="get" action="{{ url_for('print_reports') }}" class="grid">
     <label>Nombre o código<input name="q" value="{{ search }}" placeholder="Buscar estudiante"></label>
