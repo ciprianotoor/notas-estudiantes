@@ -9,7 +9,7 @@ from flask import Flask, flash, make_response, redirect, render_template, reques
 from openpyxl import Workbook, load_workbook
 from reportlab.lib.pagesizes import A4, landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 from reportlab.lib.units import inch
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -173,6 +173,14 @@ def init_db():
             criteria TEXT DEFAULT '', incidents TEXT DEFAULT '', observations TEXT DEFAULT '',
             UNIQUE(student_id, partial), FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
         );
+        """)
+        # Older resets did not remove conduct rows before resetting student IDs.
+        # Discard those orphaned rows so a newly created student cannot inherit them.
+        connection.execute("""
+            DELETE FROM conduct_evaluations
+            WHERE NOT EXISTS (
+                SELECT 1 FROM students WHERE students.id=conduct_evaluations.student_id
+            )
         """)
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(students)")}
         if "subject" not in columns:
@@ -1083,7 +1091,7 @@ def reset_academic_data():
             admin = connection.execute("SELECT * FROM teachers WHERE is_admin=1 ORDER BY id LIMIT 1").fetchone()
         admin_id = admin["id"]
         for table in (
-            "student_classes", "partial_grades", "grade_audit", "grade_change_audit",
+            "student_classes", "partial_grades", "conduct_evaluations", "grade_audit", "grade_change_audit",
             "grades", "final_results", "assessments", "reports", "enrollments",
             "assignments", "section_subjects", "classes", "students", "groups",
             "academic_offerings", "sections", "academic_years", "evaluation_periods",
@@ -3241,7 +3249,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
     with db() as connection:
         placeholders = ",".join("?" for _ in student_ids)
         students = connection.execute(
-            f"SELECT s.*, g.name AS group_name, g.teacher_id AS group_teacher_id FROM students s LEFT JOIN groups g ON g.id=s.group_id WHERE s.id IN ({placeholders}) ORDER BY s.name",
+            f"SELECT s.*, g.name AS group_name, g.grade AS group_grade, g.section AS group_section, g.academic_year AS group_year, g.teacher_id AS group_teacher_id FROM students s LEFT JOIN groups g ON g.id=s.group_id WHERE s.id IN ({placeholders}) ORDER BY s.name",
             tuple(student_ids)).fetchall()
         subject_rows = connection.execute("SELECT id, name FROM subjects").fetchall()
         conduct_rows = connection.execute("SELECT * FROM conduct_evaluations WHERE student_id IN ({})".format(placeholders), tuple(student_ids)).fetchall()
@@ -3283,9 +3291,10 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
     center_style = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER)
     story = []
     available_width = page_size[0] - document.leftMargin - document.rightMargin
-    cell_style = ParagraphStyle("pdf_cell", parent=styles["Normal"], fontSize=6.5 if final_format else 7, leading=7.2 if final_format else 8, splitLongWords=1)
+    cell_style = ParagraphStyle("pdf_cell", parent=styles["Normal"], fontSize=5.4 if final_format else 7, leading=6.1 if final_format else 8, splitLongWords=1)
     centered_cell_style = ParagraphStyle("pdf_centered_cell", parent=cell_style, alignment=TA_CENTER)
-    header_cell_style = ParagraphStyle("pdf_header_cell", parent=centered_cell_style, fontName=PDF_FONT_BOLD, textColor="white")
+    header_cell_style = ParagraphStyle("pdf_header_cell", parent=centered_cell_style, fontName=PDF_FONT_BOLD, fontSize=5.2 if final_format else 7, leading=5.8 if final_format else 8, textColor="white")
+    materia_header_style = ParagraphStyle("materia_header", parent=header_cell_style, fontSize=9 if final_format else 8, leading=10 if final_format else 9)
     header_style = TableStyle([("BACKGROUND", (0,0), (-1,0), "#17365d"), ("TEXTCOLOR", (0,0), (-1,0), "white"), ("GRID", (0,0), (-1,-1), .5, "#b7c3d0"), ("ALIGN", (0,0), (-1,0), "LEFT"), ("ALIGN", (1,1), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("FONTSIZE", (0,0), (-1,-1), 8), ("PADDING", (0,0), (-1,-1), 5)])
     for index, student in enumerate(students):
         if index: story.append(PageBreak())
@@ -3314,15 +3323,16 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         subject_label = ", ".join(subject_names_list) if subject_names_list else "Sin materias registradas"
         partials_label = ", ".join(partial_name(p) for p in selected_partials) if selected_partials else "Ningún parcial"
         report_title = ParagraphStyle("report_title", parent=styles["Heading2"], alignment=TA_CENTER, fontName=PDF_FONT_BOLD, fontSize=14 if final_format else 16, leading=17 if final_format else 19)
-        title_text = "BOLETÍN FINAL - FORMATO A4 PLEGABLE" if final_format else "BOLETÍN (REPORTE ACADÉMICO)"
-        story += [Paragraph(current["school_name"], styles["Title"]), Paragraph(title_text, report_title), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 7 if final_format else 10)]
+        title_text = "BOLETÍN DE EVALUACIÓN" if final_format else "BOLETÍN (REPORTE ACADÉMICO)"
+        if not final_format:
+            story += [Paragraph(current["school_name"], styles["Title"]), Paragraph(title_text, report_title), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 10)]
         conduct_entries = conduct_by_student.get(student["id"], {})
         if not conduct_entries and student["conduct_score"] is not None:
             conduct_entries[1] = {"quantitative": student["conduct_score"], "qualitative": student["conduct"] or "Sin registrar", "criteria": student["conduct_criteria"], "incidents": student["conduct_incidents"], "observations": student["observations"]}
         conduct_fields = [
-            (key, *CONDUCT_DETAIL_FIELDS[key])
+            (key, ("CN" if final_format and key == "quantitative" else "CL" if final_format and key == "qualitative" else CONDUCT_DETAIL_FIELDS[key][0]), CONDUCT_DETAIL_FIELDS[key][1])
             for key in CONDUCT_DETAIL_FIELDS
-            if key in conduct_options["fields"] and key not in {"quantitative", "qualitative"}
+            if key in conduct_options["fields"]
         ]
         conduct_detail_keys = {key for key, _, _ in conduct_fields}
         has_conduct_details = any(
@@ -3334,8 +3344,8 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         for partial in selected_partials:
             entry = conduct_entries.get(partial, {})
             conduct_values = {
-                "quantitative": f"{entry['quantitative']:.2f} / 100" if entry.get("quantitative") is not None else "Sin calificación",
-                "qualitative": qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración",
+                "quantitative": f"{entry['quantitative']:.2f} / 100" if entry.get("quantitative") is not None else "SC",
+                "qualitative": qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "SC",
                 "criteria": entry.get("criteria") or "Sin registrar",
                 "incidents": entry.get("incidents") or "Ninguno registrado",
                 "observations": entry.get("observations") or "Sin observaciones",
@@ -3351,11 +3361,12 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             conduct_options["include"]
             and conduct_options["fields"]
             and report_partials
+            and report_subject_ids
         )
         final_label = "Nota final" if report_partials == list(PARTIALS) else "Promedio incluido"
         summary_data = [
-            ["Asignatura / componente"] + [item for partial in report_partials for item in (partial_name(partial), "")] + [final_label, ""],
-            [""] + [item for _ in report_partials for item in ("Cuantitativa", "Cualitativa")] + ["Cuantitativa", "Cualitativa"],
+            ["MATERIA"] + [item for partial in report_partials for item in (partial_name(partial), "")] + [final_label, ""],
+            [""] + [item for _ in report_partials for item in (("CN" if final_format else "Cuantitativa"), ("CL" if final_format else "Cualitativa"))] + [("CN" if final_format else "Cuantitativa"), ("CL" if final_format else "Cualitativa")],
         ]
         detail_data = [["Materia", "Parcial", "Evaluación", "Nota", "Fecha"]]
         extraordinary = [["Materia", "Parcial", "Tipo", "Fecha", "Nota / 40"]]
@@ -3392,7 +3403,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             final_value = sum(final_values) / len(final_values) if final_values else None
             row_data = [subject_name]
             for value in [*(subject_values.get(p) for p in report_partials), final_value]:
-                row_data.extend([f"{value:.2f}" if value is not None else "Sin calificación", qualitative_learning_label(value) if value is not None else "Sin calificación"])
+                row_data.extend([f"{value:.2f}" if value is not None else "SC", qualitative_learning_label(value) if value is not None else "SC"])
             summary_data.append(row_data)
         if len(summary_data) == 2:
             summary_data.append(["-"] + ["-"] * (2 * (len(report_partials) + 1)))
@@ -3419,21 +3430,24 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             summary_data.append(conduct_row)
         conduct_width_weights = [.85] + [width for _, _, width in conduct_fields]
         conduct_width_total = sum(conduct_width_weights)
+        conduct_table_width = available_width / 2 - 32 if final_format else available_width
         conduct_table = Table(
             conduct_data,
-            colWidths=[available_width * weight / conduct_width_total for weight in conduct_width_weights],
+            colWidths=[conduct_table_width * weight / conduct_width_total for weight in conduct_width_weights],
         )
         conduct_table.setStyle(header_style)
+        conduct_table.hAlign = "CENTER"
         summary_subcolumns = 2 * (len(report_partials) + 1)
-        summary_subject_width = 2.0 * inch
+        summary_subject_width = 1.9 * inch if final_format else 2.0 * inch
+        summary_table_width = available_width / 2 - 32 if final_format else available_width
         summary_widths = [summary_subject_width] + [
-            (available_width - summary_subject_width) / summary_subcolumns
+            (summary_table_width - summary_subject_width) / summary_subcolumns
         ] * summary_subcolumns
         summary_cells = [
             [
                 pdf_cell(
                     value,
-                    header_cell_style if row_index == 0 else
+                    materia_header_style if row_index == 0 and column_index == 0 else header_cell_style if row_index == 0 else
                     (cell_style if column_index == 0 and row_index > 1 else centered_cell_style),
                 )
                 for column_index, value in enumerate(row)
@@ -3449,9 +3463,13 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             ("BACKGROUND", (0, 0), (-1, 0), "#17365d"), ("TEXTCOLOR", (0, 0), (-1, 0), "white"),
             ("BACKGROUND", (0, 1), (-1, 1), "#dbe7f3"), ("TEXTCOLOR", (0, 1), (-1, 1), "#17365d"),
             *header_spans,
+            ("ALIGN", (0, 0), (0, 0), "CENTER"), ("VALIGN", (0, 0), (0, 0), "TOP"),
+            ("BACKGROUND", (0, 0), (0, 0), "#17365d"), ("VALIGN", (0, 0), (0, 0), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (0, 0), 6), ("BOTTOMPADDING", (0, 0), (0, 0), 6),
             ("GRID", (0, 0), (-1, -1), .4, "#b7c3d0"), ("ALIGN", (1, 0), (-1, -1), "CENTER"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("FONTSIZE", (0, 0), (-1, -1), 6), ("PADDING", (0, 0), (-1, -1), 3),
         ]))
+        summary_table.hAlign = "CENTER"
         detail_width_weights = [2.0, 1.2, 2.0, 1.4, 1.4]
         detail_widths = [available_width * weight / sum(detail_width_weights) for weight in detail_width_weights]
         detail_cells = [
@@ -3466,40 +3484,144 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             for row_index, row in enumerate(extraordinary)
         ]
         extraordinary_table = Table(extraordinary_cells, colWidths=extraordinary_widths); extraordinary_table.setStyle(header_style)
-        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final del año promedia los cuatro cortes registrados; el promedio mostrado considera los parciales incluidos. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado. La conducta aparece una sola vez en la tabla principal; sus criterios, incidentes y observaciones solo se muestran cuando fueron registrados."
-        if include_conduct:
-            rules += " La conducta se registra cualitativamente como desempeño personal y ciudadano."
-        story += [Paragraph("Resumen de notas por materia y cortes evaluativos", styles["Heading3"]), summary_table, Spacer(1, 6)]
+        rules = "Referencia MINED: dos cortes por semestre y cuatro cortes anuales. La nota final del año promedia los cuatro cortes registrados; el promedio mostrado considera los parciales incluidos. Equivalencias: AA (90–100), AS (76–89), AF (60–75) y AI (menos de 60). En este sistema, cada trabajo vale 0–10, el examen vale 0–40 y la nota del corte es acumulado + examen aplicado."
         if include_conduct and conduct_fields and has_conduct_details:
-            story += [Paragraph("La conducta se registra como desempeño personal y ciudadano, de forma cualitativa.", styles["Normal"]), Spacer(1, 8), Paragraph("Detalle de conducta", styles["Heading3"]), conduct_table, Spacer(1, 10)]
-        if len(extraordinary) > 1:
-            story += [Paragraph("Notas extraordinarias registradas", styles["Heading3"]), extraordinary_table, Spacer(1, 10)]
-        if selected_partials:
-            maximum_total = selected_grade_count * 100
-            average_text = f"{selected_total / selected_grade_count:.2f} / 100" if selected_grade_count else "Sin calificaciones"
-            story += [Paragraph(f"Total de las notas incluidas: {selected_total:.2f} / {maximum_total:.2f}", styles["Heading3"]), Paragraph(f"Promedio de los parciales seleccionados: {average_text}", styles["Normal"])]
+            rules += " La conducta aparece una sola vez en la tabla principal; sus criterios, incidentes y observaciones solo se muestran cuando fueron registrados. Se registra cualitativamente como desempeño personal y ciudadano."
+        maximum_total = selected_grade_count * 100
+        average_text = f"{selected_total / selected_grade_count:.2f} / 100" if selected_grade_count else "Sin calificaciones"
+        if final_format:
+            panel_style = ParagraphStyle("panel", parent=styles["Normal"], fontSize=8, leading=10, alignment=TA_JUSTIFY, textColor="#26384a")
+            panel_title = ParagraphStyle("panel_title", parent=styles["Heading2"], fontSize=11, leading=13, alignment=TA_CENTER, textColor="#12385b", spaceAfter=6)
+            panel_center_title = panel_title
+            panel_small = ParagraphStyle("panel_small", parent=panel_style, fontSize=7, leading=8.5, alignment=TA_JUSTIFY)
+            signature_header_style = ParagraphStyle("signature_header", parent=header_cell_style, fontSize=4.4, leading=5)
+            def panel(items):
+                return [Spacer(1, 5), *items, Spacer(1, 5)]
+            cover = panel([
+                Paragraph(current["school_name"], styles["Title"]),
+                Spacer(1, 20), Paragraph("BOLETÍN DE EVALUACIÓN", panel_title),
+                Paragraph("Documento académico anual", panel_style), Spacer(1, 20),
+                Paragraph(student["name"], ParagraphStyle("student_name", parent=panel_title, fontSize=16, alignment=TA_CENTER)),
+                Paragraph(f"Código: {student['code']}", panel_style),
+                Paragraph(f"Grupo: {student['group_name'] or current['group_name']}", panel_style),
+                Spacer(1, 24), Paragraph("Año lectivo: " + str(student["group_year"] or datetime.now().year), panel_style),
+            ])
+            tutor_signatures = Table([
+                [Paragraph("CORTE", signature_header_style), Paragraph("DOCENTE GUÍA", signature_header_style), Paragraph("PADRE, MADRE O TUTOR", signature_header_style), Paragraph("ESTUDIANTE", signature_header_style)],
+                *[[Paragraph(partial_name(partial), panel_small), Paragraph("", centered_cell_style), Paragraph("", centered_cell_style), Paragraph("", centered_cell_style)] for partial in PARTIALS],
+            ], colWidths=[.78 * inch, .65 * inch, 1.32 * inch, .75 * inch], rowHeights=[22, 23, 23, 23, 23])
+            tutor_signatures.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), "#17365d"), ("TEXTCOLOR", (0, 0), (-1, 0), "white"),
+                ("GRID", (0, 0), (-1, -1), .45, "#aebdcd"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (1, 1), (-1, -1), "CENTER"), ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]))
+            tutor_signatures.hAlign = "CENTER"
+            identity = panel([
+                Paragraph("MINISTERIO DE EDUCACIÓN", panel_title),
+                Paragraph("BOLETÍN ESCOLAR · INFORMACIÓN GENERAL", panel_center_title),
+                Paragraph(f"Centro educativo: {current['school_name']}", panel_style),
+                Paragraph(f"Docente guía: {current['teacher_name']}", panel_style),
+                Paragraph(f"Estudiante: {student['name']}", panel_style),
+                Paragraph(f"Código: {student['code']} · Grupo: {student['group_name'] or current['group_name']}", panel_style),
+                Paragraph(f"Grado: {student['group_grade'] or 'NR'} · Sección: {student['group_section'] or 'NR'}", panel_style),
+                Paragraph("Turno: NR · Departamento: NR", panel_style),
+                Paragraph("Municipio: NR · Nº de matrícula: " + str(student['code']), panel_style),
+                Paragraph(f"Año lectivo: {student['group_year'] or datetime.now().year} · Corte: {partials_label}", panel_style),
+                Spacer(1, 10), Paragraph("FIRMAS DEL DOCENTE GUÍA POR CORTE", panel_title),
+                tutor_signatures,
+                Spacer(1, 12), Paragraph("Parciales incluidos", panel_title),
+                Paragraph(partials_label, panel_style), Spacer(1, 12),
+                Paragraph("Resultado global", panel_title), Paragraph(f"{selected_total:.2f} / {maximum_total:.2f}", panel_style),
+                Paragraph(f"Promedio: {average_text}", panel_style),
+            ])
+            academic = panel([Paragraph("EVALUACIÓN ACADÉMICA", panel_title), summary_table])
+            conduct_panel = panel([Paragraph("CONDUCTA Y VALORACIÓN", panel_title)])
+            if include_conduct and conduct_fields and has_conduct_details:
+                conduct_panel += [Paragraph("Desempeño personal y ciudadano", panel_small), conduct_table]
+            else:
+                conduct_panel += [Paragraph("Sin valoración de conducta registrada en los parciales seleccionados.", panel_style)]
+            scale_table = Table([
+                [Paragraph("ESCALA", header_cell_style), Paragraph("CUANTITATIVA", header_cell_style), Paragraph("CUALITATIVA", header_cell_style)],
+                [Paragraph("Aprendizaje Avanzado", panel_small), Paragraph("90–100", centered_cell_style), Paragraph("AA", centered_cell_style)],
+                [Paragraph("Aprendizaje Satisfactorio", panel_small), Paragraph("76–89", centered_cell_style), Paragraph("AS", centered_cell_style)],
+                [Paragraph("Aprendizaje Fundamental", panel_small), Paragraph("60–75", centered_cell_style), Paragraph("AF", centered_cell_style)],
+                [Paragraph("Aprendizaje Inicial", panel_small), Paragraph("Menos de 60", centered_cell_style), Paragraph("AI", centered_cell_style)],
+            ], colWidths=[1.45 * inch, 1.05 * inch, 1.05 * inch])
+            scale_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), "#17365d"), ("TEXTCOLOR", (0, 0), (-1, 0), "white"),
+                ("BACKGROUND", (0, 1), (-1, -1), "#f7f9fc"), ("GRID", (0, 0), (-1, -1), .45, "#aebdcd"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            scale_table.hAlign = "CENTER"
+            conduct_panel += [Spacer(1, 8), Paragraph("ESCALAS Y EQUIVALENCIAS", panel_title), scale_table]
+            notes = panel([
+                Paragraph("OBSERVACIONES Y CIERRE", panel_title),
+                Paragraph(f"Criterios evaluativos: {current['evaluation_criteria'] or 'No registrados'}", panel_style),
+                Spacer(1, 8), Paragraph("NOMENCLATURA", panel_title),
+                Paragraph("CN = cuantitativa · CL = cualitativa · SC = sin calificación · NR = no registrado", panel_style),
+                Spacer(1, 12), Paragraph("REFERENCIA DE EVALUACIÓN", panel_title),
+                Paragraph("El boletín informa a la familia los resultados de aprendizaje alcanzados en cada corte evaluativo y orienta el seguimiento de logros y dificultades.", panel_small),
+                Spacer(1, 8),
+                Paragraph("Dos cortes por semestre y cuatro cortes anuales. La nota final del año promedia los cuatro cortes registrados; el promedio mostrado considera los parciales incluidos.", panel_small),
+                Spacer(1, 8), Paragraph("CÁLCULO DE LA NOTA", panel_title),
+                Paragraph("Cada trabajo vale 0–10 puntos, el examen vale 0–40 y la nota del corte es el acumulado más el examen aplicado.", panel_small),
+                Spacer(1, 8), Paragraph("CONDUCTA", panel_title),
+                Paragraph("Aparece una sola vez en la tabla principal. Sus criterios, incidentes y observaciones se muestran únicamente cuando fueron registrados. Se registra cualitativamente como desempeño personal y ciudadano.", panel_small),
+                Spacer(1, 10),
+            ])
+            def two_panels(left, right):
+                table = Table([[left, right]], colWidths=[available_width / 2 - 8, available_width / 2 - 8], rowHeights=[page_size[1] - 72])
+                table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), "#fbfcfe"),
+                    ("BOX", (0, 0), (-1, -1), 1.2, "#17365d"), ("INNERGRID", (0, 0), (-1, -1), .5, "#c4ced9"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 12), ("TOPPADDING", (0, 0), (-1, -1), 10),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ]))
+                return table
+            right_panel = notes + panel([Paragraph("SELLO DEL CENTRO EDUCATIVO", panel_center_title), Paragraph("____________________________", center_style)])
+            story += [two_panels(cover, identity), PageBreak(), two_panels(academic + conduct_panel, right_panel)]
         else:
-            story += [Paragraph("No se seleccionaron parciales para incluir en el total.", styles["Normal"])]
-        story += [Paragraph(f"Criterios evaluativos: {current['evaluation_criteria'] or 'No registrados'}", styles["Normal"]), Spacer(1, 6), Paragraph("Reglas de evaluación", styles["Heading3"]), Paragraph(rules, styles["Normal"]), Spacer(1, 28), Paragraph("______________________________                         ______________________________", center_style), Paragraph("Firma del docente                                                        Firma del estudiante/tutor", center_style)]
+            story += [Paragraph("Resumen de notas por materia y cortes evaluativos", styles["Heading3"]), summary_table, Spacer(1, 6)]
+            if include_conduct and conduct_fields and has_conduct_details:
+                story += [Paragraph("La conducta se registra como desempeño personal y ciudadano, de forma cualitativa.", styles["Normal"]), Spacer(1, 8), Paragraph("Detalle de conducta", styles["Heading3"]), conduct_table, Spacer(1, 10)]
+            if len(extraordinary) > 1:
+                story += [Paragraph("Notas extraordinarias registradas", styles["Heading3"]), extraordinary_table, Spacer(1, 10)]
+            story += [Paragraph(f"Total de las notas incluidas: {selected_total:.2f} / {maximum_total:.2f}", styles["Heading3"]), Paragraph(f"Promedio de los parciales seleccionados: {average_text}", styles["Normal"]), Paragraph(f"Criterios evaluativos: {current['evaluation_criteria'] or 'No registrados'}", styles["Normal"]), Spacer(1, 6), Paragraph("Reglas de evaluación", styles["Heading3"]), Paragraph(rules, styles["Normal"]), Spacer(1, 28), Paragraph("______________________________                         ______________________________", center_style), Paragraph("Firma del docente                                                        Firma del estudiante/tutor", center_style)]
     def booklet_page(canvas, doc):
         if not final_format:
             return
         canvas.saveState()
-        canvas.setStrokeColorRGB(.72, .76, .82)
+        # Maquetación institucional para impresión horizontal y doblado al centro.
+        # La línea central queda fuera del contenido y sirve como guía de pliegue.
+        canvas.setStrokeColorRGB(.55, .61, .70)
         canvas.setDash(3, 3)
-        canvas.line(page_size[0] / 2, 0, page_size[0] / 2, page_size[1])
+        canvas.line(page_size[0] / 2, 18, page_size[0] / 2, page_size[1] - 18)
         canvas.setDash()
-        canvas.setFont(PDF_FONT, 6)
-        canvas.setFillColorRGB(.35, .4, .48)
-        canvas.drawCentredString(page_size[0] / 4, 10, "CARA EXTERIOR / INTERIOR - DOBLAR AL CENTRO")
-        canvas.drawCentredString(page_size[0] * 3 / 4, 10, "BOLETÍN FINAL")
+        canvas.setStrokeColorRGB(.08, .21, .38)
+        canvas.setLineWidth(2)
+        canvas.line(document.leftMargin, page_size[1] - 20, page_size[0] - document.rightMargin, page_size[1] - 20)
+        canvas.setFont(PDF_FONT_BOLD, 6.5)
+        canvas.setFillColorRGB(.18, .25, .35)
+        side = "CARA EXTERIOR" if doc.page % 2 else "CARA INTERIOR"
+        canvas.drawString(document.leftMargin, 9, f"{side} · BOLETÍN DE EVALUACIÓN")
+        canvas.drawRightString(page_size[0] - document.rightMargin, 9, f"Página {doc.page} · Doblar al centro")
         canvas.restoreState()
     if final_format:
         document.build(story, onFirstPage=booklet_page, onLaterPages=booklet_page)
     else:
         document.build(story)
     output.seek(0)
-    filename = "boletin-final-a4-plegable.pdf" if final_format else "reportes-academicos.pdf"
+    if final_format and len(students) == 1:
+        student = students[0]
+        grade = student["group_grade"] or student["group_name"] or "sin-grado"
+        filename = secure_filename(f"boletin-{student['name']}-{grade}.pdf")
+    elif final_format:
+        filename = "boletin-final-a4-plegable-varios-estudiantes.pdf"
+    else:
+        filename = "reportes-academicos.pdf"
     return send_file(output, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
 
