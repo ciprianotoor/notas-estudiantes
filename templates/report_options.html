@@ -49,6 +49,12 @@
       <label><input type="checkbox" name="conduct_field" value="incidents" checked> Incidentes registrados</label>
       <label><input type="checkbox" name="conduct_field" value="observations" checked> Observaciones</label>
     </div>
+    <h2>Formato de impresión</h2>
+    <div class="selection-list">
+      <label><input type="radio" name="format" value="standard" checked> Boleta actual (carta horizontal)</label>
+      <label><input type="radio" name="format" value="final"> Boletín final A4 horizontal plegable</label>
+    </div>
+    <p class="muted">El formato final está preparado para imprimir a doble cara, voltear por el borde corto y doblar la hoja a la mitad. La boleta actual permanece disponible.</p>
     <div class="actions">
       <button type="submit">Generar boleta PDF</button>
       <a class="button secondary" href="{{ url_for('grades', student_id=student.id) }}">Cancelar</a>

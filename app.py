@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import wraps
 from flask import Flask, flash, make_response, redirect, render_template, request, send_file, session, url_for
 from openpyxl import Workbook, load_workbook
-from reportlab.lib.pagesizes import landscape, letter
+from reportlab.lib.pagesizes import A4, landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.units import inch
@@ -2996,6 +2996,7 @@ def teacher_pdf(student_id):
             [student_id],
             requested_partials(request.args),
             selected_class_ids=selected_class_ids if request.args.get("class_filter") == "1" else None,
+            final_format=request.args.get("format") == "final",
         )
     with db() as connection:
         student = connection.execute(
@@ -3045,6 +3046,7 @@ def teacher_student_pdf(student_id):
         selected_partials,
         selected_class_ids=selected_class_ids if has_class_filter else None,
         conduct_options=requested_conduct_options(request.form),
+        final_format=request.form.get("format") == "final",
     )
 
 
@@ -3078,6 +3080,7 @@ def teacher_selected_pdf():
         selected_partials,
         selected_class_ids=selected_class_ids if has_class_filter else None,
         conduct_options=requested_conduct_options(request.form),
+        final_format=request.form.get("format") == "final",
     )
 
 
@@ -3224,7 +3227,7 @@ def pdf_cell(value, style):
     return Paragraph(text, style)
 
 
-def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_options=None):
+def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_options=None, final_format=False):
     conduct_options = conduct_options or {
         "include": True,
         "fields": set(CONDUCT_DETAIL_FIELDS),
@@ -3268,7 +3271,9 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
     for row in conduct_rows:
         conduct_by_student.setdefault(row["student_id"], {})[row["partial"]] = dict(row)
     fallback_settings = settings(); output = io.BytesIO()
-    document = SimpleDocTemplate(output, pagesize=landscape(letter), rightMargin=.45*inch, leftMargin=.45*inch, topMargin=.4*inch, bottomMargin=.4*inch)
+    page_size = landscape(A4) if final_format else landscape(letter)
+    margin = .28 * inch if final_format else .45 * inch
+    document = SimpleDocTemplate(output, pagesize=page_size, rightMargin=margin, leftMargin=margin, topMargin=.32*inch if final_format else .4*inch, bottomMargin=.32*inch if final_format else .4*inch)
     styles = getSampleStyleSheet()
     for style in styles.byName.values():
         style.fontName = PDF_FONT
@@ -3277,8 +3282,8 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
     styles["Heading3"].fontName = PDF_FONT_BOLD
     center_style = ParagraphStyle("center", parent=styles["Normal"], alignment=TA_CENTER)
     story = []
-    available_width = landscape(letter)[0] - document.leftMargin - document.rightMargin
-    cell_style = ParagraphStyle("pdf_cell", parent=styles["Normal"], fontSize=7, leading=8, splitLongWords=1)
+    available_width = page_size[0] - document.leftMargin - document.rightMargin
+    cell_style = ParagraphStyle("pdf_cell", parent=styles["Normal"], fontSize=6.5 if final_format else 7, leading=7.2 if final_format else 8, splitLongWords=1)
     centered_cell_style = ParagraphStyle("pdf_centered_cell", parent=cell_style, alignment=TA_CENTER)
     header_cell_style = ParagraphStyle("pdf_header_cell", parent=centered_cell_style, fontName=PDF_FONT_BOLD, textColor="white")
     header_style = TableStyle([("BACKGROUND", (0,0), (-1,0), "#17365d"), ("TEXTCOLOR", (0,0), (-1,0), "white"), ("GRID", (0,0), (-1,-1), .5, "#b7c3d0"), ("ALIGN", (0,0), (-1,0), "LEFT"), ("ALIGN", (1,1), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("FONTSIZE", (0,0), (-1,-1), 8), ("PADDING", (0,0), (-1,-1), 5)])
@@ -3308,8 +3313,9 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         subject_names_list = sorted({subject_names.get(sid, "General") if sid else "General" for sid in report_subject_ids})
         subject_label = ", ".join(subject_names_list) if subject_names_list else "Sin materias registradas"
         partials_label = ", ".join(partial_name(p) for p in selected_partials) if selected_partials else "Ningún parcial"
-        report_title = ParagraphStyle("report_title", parent=styles["Heading2"], alignment=TA_CENTER, fontName=PDF_FONT_BOLD, fontSize=16, leading=19)
-        story += [Paragraph(current["school_name"], styles["Title"]), Paragraph("BOLETÍN (REPORTE ACADÉMICO)", report_title), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 10)]
+        report_title = ParagraphStyle("report_title", parent=styles["Heading2"], alignment=TA_CENTER, fontName=PDF_FONT_BOLD, fontSize=14 if final_format else 16, leading=17 if final_format else 19)
+        title_text = "BOLETÍN FINAL - FORMATO A4 PLEGABLE" if final_format else "BOLETÍN (REPORTE ACADÉMICO)"
+        story += [Paragraph(current["school_name"], styles["Title"]), Paragraph(title_text, report_title), Paragraph(f"Docente: {current['teacher_name']} · Grupo: {student['group_name'] or current['group_name']} · Estudiante: {student['name']} · Código: {student['code']}", styles["Normal"]), Paragraph(f"Materias: {subject_label}", styles["Normal"]), Paragraph(f"Parciales incluidos: {partials_label}", styles["Normal"]), Spacer(1, 7 if final_format else 10)]
         conduct_entries = conduct_by_student.get(student["id"], {})
         if not conduct_entries and student["conduct_score"] is not None:
             conduct_entries[1] = {"quantitative": student["conduct_score"], "qualitative": student["conduct"] or "Sin registrar", "criteria": student["conduct_criteria"], "incidents": student["conduct_incidents"], "observations": student["observations"]}
@@ -3475,8 +3481,26 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         else:
             story += [Paragraph("No se seleccionaron parciales para incluir en el total.", styles["Normal"])]
         story += [Paragraph(f"Criterios evaluativos: {current['evaluation_criteria'] or 'No registrados'}", styles["Normal"]), Spacer(1, 6), Paragraph("Reglas de evaluación", styles["Heading3"]), Paragraph(rules, styles["Normal"]), Spacer(1, 28), Paragraph("______________________________                         ______________________________", center_style), Paragraph("Firma del docente                                                        Firma del estudiante/tutor", center_style)]
-    document.build(story); output.seek(0)
-    return send_file(output, mimetype="application/pdf", as_attachment=True, download_name="reportes-academicos.pdf")
+    def booklet_page(canvas, doc):
+        if not final_format:
+            return
+        canvas.saveState()
+        canvas.setStrokeColorRGB(.72, .76, .82)
+        canvas.setDash(3, 3)
+        canvas.line(page_size[0] / 2, 0, page_size[0] / 2, page_size[1])
+        canvas.setDash()
+        canvas.setFont(PDF_FONT, 6)
+        canvas.setFillColorRGB(.35, .4, .48)
+        canvas.drawCentredString(page_size[0] / 4, 10, "CARA EXTERIOR / INTERIOR - DOBLAR AL CENTRO")
+        canvas.drawCentredString(page_size[0] * 3 / 4, 10, "BOLETÍN FINAL")
+        canvas.restoreState()
+    if final_format:
+        document.build(story, onFirstPage=booklet_page, onLaterPages=booklet_page)
+    else:
+        document.build(story)
+    output.seek(0)
+    filename = "boletin-final-a4-plegable.pdf" if final_format else "reportes-academicos.pdf"
+    return send_file(output, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
 
 init_db()
