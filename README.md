@@ -59,6 +59,22 @@ El servicio escucha en el puerto `5000` y conserva la información en el volumen
 
 Cada asignatura tiene cuatro parciales. La boleta muestra materias por fila y cuantitativa/cualitativa por parcial. La equivalencia MINED es: `AA` (90–100), `AS` (76–89), `AF` (60–75) y `AI` (menos de 60). Conducta usa la correspondencia automática y documenta criterios, incidentes y observaciones por parcial.
 
+### Boletas escolares
+
+La impresión individual genera nombres de archivo con estudiante y grado, por
+ejemplo `boletin-Nombre_Estudiante-9no.pdf`. La versión A4 plegable agrega el
+sufijo `-a4-plegable`.
+
+La boleta A4 se organiza en cuatro caras: portada, información general,
+evaluación académica/conducta y observaciones/cierre. Incluye año lectivo,
+grupo, grado, sección, corte, escala de equivalencias, nomenclatura (`CN`,
+`CL`, `SC`, `NR`), firmas por corte del docente guía, padre/madre/tutor y
+estudiante, además de observaciones y sello del centro. Las notas se imprimen
+sin decimales; los cálculos internos conservan su precisión.
+
+El diseño está inspirado en referencias públicas de evaluación escolar de
+Nicaragua, pero no representa una boleta oficial emitida por el MINED.
+
 ## Bajas y reportes
 
 Una baja conserva el expediente y las notas. Desde el filtro de estudiantes dados de baja se puede restablecer la matrícula, exportar el expediente CSV o eliminarlo definitivamente (solo Admin/Dirección y con confirmación). Al imprimir una boleta individual o en lote, puedes elegir clases y parciales y personalizar Conducta: incluirla u ocultarla y seleccionar datos cuantitativos, cualitativos, criterios, incidentes y observaciones. En la impresión por lote, cada estudiante se genera en su propia página.
