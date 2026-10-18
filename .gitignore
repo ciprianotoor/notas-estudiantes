@@ -7,3 +7,7 @@ data/uploads/*
 __pycache__/
 *.pyc
 *.log
+# Archivos generados por PyInstaller
+/build/
+/dist/
+/NotasEstudiantes.spec
