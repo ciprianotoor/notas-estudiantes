@@ -3518,8 +3518,8 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             ]))
             tutor_signatures.hAlign = "CENTER"
             identity = panel([
-                Paragraph("MINISTERIO DE EDUCACIÓN", panel_title),
-                Paragraph("BOLETÍN ESCOLAR · INFORMACIÓN GENERAL", panel_center_title),
+                Paragraph("BOLETA ESCOLAR", panel_title),
+                Paragraph("INFORMACIÓN GENERAL", panel_center_title),
                 Paragraph(f"Centro educativo: {current['school_name']}", panel_style),
                 Paragraph(f"Docente guía: {current['teacher_name']}", panel_style),
                 Paragraph(f"Estudiante: {student['name']}", panel_style),
