@@ -3344,7 +3344,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         for partial in selected_partials:
             entry = conduct_entries.get(partial, {})
             conduct_values = {
-                "quantitative": f"{entry['quantitative']:.2f} / 100" if entry.get("quantitative") is not None else "SC",
+                "quantitative": f"{entry['quantitative']:.0f} / 100" if entry.get("quantitative") is not None else "SC",
                 "qualitative": qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "SC",
                 "criteria": entry.get("criteria") or "Sin registrar",
                 "incidents": entry.get("incidents") or "Ninguno registrado",
@@ -3390,20 +3390,20 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                     selected_grade_count += 1
                 if p not in report_partials:
                     continue
-                recovery = f"{row['recovery_score']:.2f}" if row.get("recovery_type") else "-"
+                recovery = f"{row['recovery_score']:.0f}" if row.get("recovery_type") else "-"
                 for i in range(1, 7):
-                    detail_data.append([subject_name, partial_name(p), f"Trabajo {i}", f"{row[f'work{i}']:.2f} / 10", row.get(f"work{i}_date") or "-"])
-                detail_data.append([subject_name, partial_name(p), "Examen original", f"{row['exam']:.2f} / 40", row.get("exam_date") or "-"])
+                    detail_data.append([subject_name, partial_name(p), f"Trabajo {i}", f"{row[f'work{i}']:.0f} / 10", row.get(f"work{i}_date") or "-"])
+                detail_data.append([subject_name, partial_name(p), "Examen original", f"{row['exam']:.0f} / 40", row.get("exam_date") or "-"])
                 if row.get("recovery_type"):
-                    detail_data.append([subject_name, partial_name(p), row["recovery_type"], f"{row['recovery_score']:.2f} / 40", row.get("recovery_date") or "-"])
-                    extraordinary.append([subject_name, partial_name(p), row["recovery_type"], row.get("recovery_date") or "-", f"{row['recovery_score']:.2f}"])
-                detail_data.append([subject_name, partial_name(p), "Examen aplicado", f"{applied_exam(row):.2f} / 40", row.get("exam_date") or row.get("recovery_date") or "-"])
-                detail_data.append([subject_name, partial_name(p), "Nota final del parcial", f"{row['result']:.2f} / 100", "-"])
+                    detail_data.append([subject_name, partial_name(p), row["recovery_type"], f"{row['recovery_score']:.0f} / 40", row.get("recovery_date") or "-"])
+                    extraordinary.append([subject_name, partial_name(p), row["recovery_type"], row.get("recovery_date") or "-", f"{row['recovery_score']:.0f}"])
+                detail_data.append([subject_name, partial_name(p), "Examen aplicado", f"{applied_exam(row):.0f} / 40", row.get("exam_date") or row.get("recovery_date") or "-"])
+                detail_data.append([subject_name, partial_name(p), "Nota final del parcial", f"{row['result']:.0f} / 100", "-"])
             final_values = [subject_values[p] for p in report_partials if p in subject_values]
             final_value = sum(final_values) / len(final_values) if final_values else None
             row_data = [subject_name]
             for value in [*(subject_values.get(p) for p in report_partials), final_value]:
-                row_data.extend([f"{value:.2f}" if value is not None else "SC", qualitative_learning_label(value) if value is not None else "SC"])
+                row_data.extend([f"{value:.0f}" if value is not None else "SC", qualitative_learning_label(value) if value is not None else "SC"])
             summary_data.append(row_data)
         if len(summary_data) == 2:
             summary_data.append(["-"] + ["-"] * (2 * (len(report_partials) + 1)))
@@ -3415,7 +3415,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                 entry = conduct_entries.get(partial, {})
                 if entry.get("quantitative") is not None:
                     conduct_scores.append(float(entry["quantitative"]))
-                quantitative = f"{entry['quantitative']:.2f}" if entry.get("quantitative") is not None else "Sin calificación"
+                quantitative = f"{entry['quantitative']:.0f}" if entry.get("quantitative") is not None else "SC"
                 qualitative = qualitative_learning_label(entry.get("quantitative")) if entry.get("quantitative") is not None else "Sin valoración"
                 conduct_row.extend([
                     quantitative if "quantitative" in conduct_options["fields"] else "-",
@@ -3423,7 +3423,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                 ])
             final_conduct_score = sum(conduct_scores) / len(conduct_scores) if conduct_scores else None
             conduct_row.extend([
-                f"{final_conduct_score:.2f}" if "quantitative" in conduct_options["fields"] and final_conduct_score is not None else "-",
+                f"{final_conduct_score:.0f}" if "quantitative" in conduct_options["fields"] and final_conduct_score is not None else "-",
                 qualitative_learning_label(final_conduct_score)
                 if "qualitative" in conduct_options["fields"] and final_conduct_score is not None else "-",
             ])
@@ -3488,7 +3488,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
         if include_conduct and conduct_fields and has_conduct_details:
             rules += " La conducta aparece una sola vez en la tabla principal; sus criterios, incidentes y observaciones solo se muestran cuando fueron registrados. Se registra cualitativamente como desempeño personal y ciudadano."
         maximum_total = selected_grade_count * 100
-        average_text = f"{selected_total / selected_grade_count:.2f} / 100" if selected_grade_count else "Sin calificaciones"
+        average_text = f"{selected_total / selected_grade_count:.0f} / 100" if selected_grade_count else "SC"
         if final_format:
             panel_style = ParagraphStyle("panel", parent=styles["Normal"], fontSize=8, leading=10, alignment=TA_JUSTIFY, textColor="#26384a")
             panel_title = ParagraphStyle("panel_title", parent=styles["Heading2"], fontSize=11, leading=13, alignment=TA_CENTER, textColor="#12385b", spaceAfter=6)
@@ -3532,7 +3532,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                 tutor_signatures,
                 Spacer(1, 12), Paragraph("Parciales incluidos", panel_title),
                 Paragraph(partials_label, panel_style), Spacer(1, 12),
-                Paragraph("Resultado global", panel_title), Paragraph(f"{selected_total:.2f} / {maximum_total:.2f}", panel_style),
+                Paragraph("Resultado global", panel_title), Paragraph(f"{selected_total:.0f} / {maximum_total:.0f}", panel_style),
                 Paragraph(f"Promedio: {average_text}", panel_style),
             ])
             academic = panel([Paragraph("EVALUACIÓN ACADÉMICA", panel_title), summary_table])
@@ -3614,10 +3614,11 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
     else:
         document.build(story)
     output.seek(0)
-    if final_format and len(students) == 1:
+    if len(students) == 1:
         student = students[0]
         grade = student["group_grade"] or student["group_name"] or "sin-grado"
-        filename = secure_filename(f"boletin-{student['name']}-{grade}.pdf")
+        suffix = "-a4-plegable" if final_format else ""
+        filename = secure_filename(f"boletin-{student['name']}-{grade}{suffix}.pdf")
     elif final_format:
         filename = "boletin-final-a4-plegable-varios-estudiantes.pdf"
     else:
