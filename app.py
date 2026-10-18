@@ -3509,7 +3509,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
             tutor_signatures = Table([
                 [Paragraph("CORTE", signature_header_style), Paragraph("DOCENTE GUÍA", signature_header_style), Paragraph("PADRE, MADRE O TUTOR", signature_header_style), Paragraph("ESTUDIANTE", signature_header_style)],
                 *[[Paragraph(partial_name(partial), panel_small), Paragraph("", centered_cell_style), Paragraph("", centered_cell_style), Paragraph("", centered_cell_style)] for partial in PARTIALS],
-            ], colWidths=[.78 * inch, .65 * inch, 1.32 * inch, .75 * inch], rowHeights=[22, 23, 23, 23, 23])
+            ], colWidths=[.78 * inch, .9 * inch, .9 * inch, .9 * inch], rowHeights=[22, 23, 23, 23, 23])
             tutor_signatures.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), "#17365d"), ("TEXTCOLOR", (0, 0), (-1, 0), "white"),
                 ("GRID", (0, 0), (-1, -1), .45, "#aebdcd"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
