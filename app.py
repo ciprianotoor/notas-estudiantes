@@ -2141,14 +2141,27 @@ def grades(student_id):
         except (TypeError, ValueError):
             flash("Las notas y la asistencia deben ser números válidos.", "error")
             return redirect(url_for("grades", student_id=student_id, subject_id=selected_subject_id))
+        limit_reason = request.form.get("limit_reason", "").strip()
+        work_max = 10.0
+        exam_max = 40.0
+        override_limits = request.form.get("override_limits") == "1" and bool(limit_reason or work_max != 10.0 or exam_max != 40.0)
+        if override_limits:
+            try:
+                work_max = float(request.form.get("work_max", "10"))
+                exam_max = float(request.form.get("exam_max", "40"))
+            except (TypeError, ValueError):
+                work_max = exam_max = 0
+            if not limit_reason or not (0 < work_max <= 100) or not (0 < exam_max <= 100):
+                flash("Para modificar los límites debes indicar valores válidos y una justificación.", "error")
+                return redirect(url_for("grades", student_id=student_id, subject_id=selected_subject_id))
         dates = [request.form.get(f"work{i}_date", "").strip() for i in range(1, 7)]
         recovery_type = request.form.get("recovery_type", "").strip()
         exam_date = request.form.get("exam_date", "").strip()
         recovery_date = request.form.get("recovery_date", "").strip()
         status = request.form.get("status", "En proceso").strip()
         comments = request.form.get("comments", "").strip()
-        if any(value < 0 or value > 10 for value in values) or exam < 0 or exam > 40 or recovery_score < 0 or recovery_score > 40 or attendance < 0 or attendance > 100 or status not in ("En proceso", "Entregado", "Cerrado"):
-            flash("Cada trabajo debe estar entre 0 y 10; el examen, entre 0 y 40.", "error")
+        if any(value < 0 or value > work_max for value in values) or exam < 0 or exam > exam_max or recovery_score < 0 or recovery_score > 40 or attendance < 0 or attendance > 100 or status not in ("En proceso", "Entregado", "Cerrado"):
+            flash(f"Cada trabajo debe estar entre 0 y {work_max:g}; el examen, entre 0 y {exam_max:g}.", "error")
         elif recovery_type and sum(values) <= 50:
             flash("El rescate o extraordinario requiere un acumulado mayor de 50 puntos.", "error")
         else:
@@ -2166,6 +2179,8 @@ def grades(student_id):
                 audit_details = f"Nota parcial {grade_value({'work1': values[0], 'work2': values[1], 'work3': values[2], 'work4': values[3], 'work5': values[4], 'work6': values[5], 'exam': exam})} (subject_id={subject_id})"
                 if teacher_is_admin(teacher_id):
                     audit_details += f" · Motivo admin: {change_reason}"
+                if override_limits:
+                    audit_details += f" · Límites modificados: trabajos={work_max:g}, examen={exam_max:g} · Motivo: {limit_reason}"
                 connection.execute("INSERT INTO grade_audit(student_id,partial,action,details,actor_teacher_id) VALUES(?,?,?,?,?)",
                                    (student_id, partial, "Actualización", audit_details, teacher_id))
             flash(f"{partial_name(partial)} guardado.", "success")
@@ -2881,27 +2896,56 @@ def statistics():
     teacher_id = session.get("teacher_id")
     with db() as connection:
         if teacher_is_admin(teacher_id) or teacher_is_secretary(teacher_id):
-            students = connection.execute("SELECT s.* FROM students s ORDER BY s.name").fetchall()
+            students = connection.execute("""
+                SELECT s.*, g.name AS group_name
+                FROM students s LEFT JOIN groups g ON g.id=s.group_id
+                WHERE s.enrollment_status='active'
+                ORDER BY s.name
+            """).fetchall()
+            withdrawn_students = connection.execute("""
+                SELECT s.*, g.name AS group_name
+                FROM students s LEFT JOIN groups g ON g.id=s.group_id
+                WHERE s.enrollment_status='withdrawn'
+                ORDER BY s.name
+            """).fetchall()
         else:
             students = connection.execute("""
-                SELECT s.* FROM students s
+                SELECT s.*, g.name AS group_name FROM students s
                 LEFT JOIN groups g ON g.id=s.group_id
-                WHERE g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?)
+                WHERE s.enrollment_status='active' AND (g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?))
+                ORDER BY s.name
+            """, (teacher_id, teacher_id)).fetchall()
+            withdrawn_students = connection.execute("""
+                SELECT s.*, g.name AS group_name FROM students s
+                LEFT JOIN groups g ON g.id=s.group_id
+                WHERE s.enrollment_status='withdrawn' AND (g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?))
                 ORDER BY s.name
             """, (teacher_id, teacher_id)).fetchall()
         subject_rows = connection.execute("SELECT id,name FROM subjects").fetchall()
     subject_names = {row["id"]: row["name"] for row in subject_rows}
     summaries = []
+    failed_subjects = []
     for student in students:
         subjects, final = summary(student)
         for sid, data in subjects.items():
-            summaries.append({"student": student, "subject_id": sid, "subject_name": subject_names.get(sid, "General") if sid else "General", "partials": data["partials"], "total": data["total"], "overall": final})
+            subject_name = subject_names.get(sid, "General") if sid else "General"
+            annual_average = round(data["total"] / 4, 2)
+            item = {"student": student, "subject_id": sid, "subject_name": subject_name,
+                    "partials": data["partials"], "total": data["total"],
+                    "annual_average": annual_average, "overall": final}
+            summaries.append(item)
+            # Conducta is not an academic subject and must not appear as a failed class.
+            if sid and subject_name.strip().casefold() != "conducta" and annual_average < 60:
+                failed_subjects.append(item)
     partial_stats = []
     for partial in PARTIALS:
         values = [item["partials"][partial]["result"] for item in summaries if partial in item["partials"]]
         partial_stats.append({"name": partial_name(partial), "average": round(sum(values) / len(values), 2) if values else 0,
                               "approved": sum(value >= 60 for value in values), "count": len(values)})
-    return render_template("statistics.html", summaries=summaries, partial_stats=partial_stats)
+    failed_students = len({item["student"]["id"] for item in failed_subjects})
+    return render_template("statistics.html", summaries=summaries, partial_stats=partial_stats,
+                           failed_subjects=failed_subjects, failed_students=failed_students,
+                           withdrawn_students=withdrawn_students)
 
 
 
@@ -3049,7 +3093,6 @@ def make_certificate_pdf(student_id, subject_ids, selected_partials, include_ave
                 [Paragraph(escape(student["name"]), center), Paragraph(escape(student["code"]), center), Paragraph(escape(f"{student['group_grade'] or ''} {student['group_name'] or ''}".strip() or "—"), center), Paragraph(escape(str(student["group_year"] or current.get("academic_year") or "—")), center)]]
     identity_table = Table(identity, colWidths=[2.7*inch, 1.15*inch, 1.45*inch, 1.0*inch], hAlign="CENTER")
     identity_style = [("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 6), ("RIGHTPADDING", (0,0), (-1,-1), 6)]
-    if formal_tables: identity_style.append(("GRID", (0,0), (-1,-1), 0.6, colors.black))
     identity_table.setStyle(TableStyle(identity_style))
     story.append(identity_table)
     story.append(Spacer(1, 18))
@@ -3068,7 +3111,12 @@ def make_certificate_pdf(student_id, subject_ids, selected_partials, include_ave
     widths = [3.1*inch] + [0.72*inch] * len(selected_partials) + ([0.85*inch] if include_average else [])
     table = Table(data, colWidths=widths, repeatRows=1, hAlign="CENTER")
     table_style = [("TEXTCOLOR", (0,0), (-1,0), colors.black), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,1), (-1,-1), "CENTER"), ("LEFTPADDING", (0,0), (-1,-1), 5), ("RIGHTPADDING", (0,0), (-1,-1), 5), ("TOPPADDING", (0,0), (-1,-1), 7), ("BOTTOMPADDING", (0,0), (-1,-1), 7)]
+    # Las casillas se reservan exclusivamente para la tabla de notas.
     if formal_tables: table_style.append(("GRID", (0,0), (-1,-1), 0.6, colors.black))
+    subject_colors = ["#ffffff", "#eaf4ff"]
+    for row_index, _subject in enumerate(subjects, start=1):
+        table_style.append(("BACKGROUND", (0, row_index), (-1, row_index), colors.HexColor(subject_colors[(row_index - 1) % len(subject_colors)])))
+        table_style.append(("FONTNAME", (0, row_index), (0, row_index), PDF_FONT_BOLD))
     table.setStyle(TableStyle(table_style))
     story.extend([table, Spacer(1, 14), Paragraph("Escalas", header)])
     scale = [[Paragraph("Cuantitativa", header), Paragraph("Cualitativa", header), Paragraph("Equivalencia", header)],
@@ -3078,13 +3126,11 @@ def make_certificate_pdf(student_id, subject_ids, selected_partials, include_ave
              [Paragraph("Menos de 60", center), Paragraph("Aprendizaje Inicial (AI)", center), Paragraph("AI", center)]]
     scale_table = Table(scale, colWidths=[1.35*inch, 3.25*inch, 1.1*inch], hAlign="CENTER")
     scale_style = [("VALIGN", (0,0), (-1,-1), "MIDDLE")]
-    if formal_tables: scale_style.append(("GRID", (0,0), (-1,-1), 0.6, colors.black))
     scale_table.setStyle(TableStyle(scale_style))
     story.append(scale_table)
     story.extend([Spacer(1, 18), Paragraph(f"Parciales incluidos: {escape(', '.join(partial_name(p) for p in selected_partials))}. Se muestra SC cuando no existe calificación registrada.", small), Spacer(1, 32)])
     signatures = Table([[Paragraph("____________________________", center), Paragraph("____________________________", center)], [Paragraph("Docente guía", center), Paragraph("Director(a) / responsable", center)], [Paragraph(escape(guide), center), Paragraph("____________________________", center)]], colWidths=[3.1*inch, 3.1*inch], hAlign="CENTER")
     signature_style = [("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 3), ("BOTTOMPADDING", (0,0), (-1,-1), 3)]
-    if formal_tables: signature_style.append(("BOX", (0,0), (-1,-1), 0.4, colors.black))
     signatures.setStyle(TableStyle(signature_style))
     story.append(signatures)
     doc.build(story)
@@ -3252,8 +3298,12 @@ def grade_sheet():
     group_id = request.args.get("group_id", type=int)
     with db() as connection:
         groups = connection.execute("SELECT DISTINCT g.id,g.name FROM groups g JOIN classes c ON c.group_id=g.id WHERE c.teacher_id=? ORDER BY g.name", (teacher_id,)).fetchall()
+        group_info = connection.execute("SELECT name,grade,section,academic_year FROM groups WHERE id=?", (group_id,)).fetchone() if group_id else None
+        teacher_info = connection.execute("SELECT name,academic_year FROM teachers WHERE id=?", (teacher_id,)).fetchone()
     classes, students = grade_sheet_data(teacher_id, group_id)
-    return render_template("grade_sheet.html", groups=groups, selected_group=group_id, classes=classes, students=students)
+    current = settings(teacher_id)
+    sheet_info = {"school_name": current.get("school_name") or "Centro educativo", "school_code": current.get("school_code") or "", "teacher_name": teacher_info["name"] if teacher_info else current.get("teacher_name") or "", "academic_year": (group_info["academic_year"] if group_info else None) or (teacher_info["academic_year"] if teacher_info else None) or current.get("academic_year") or "", "group_name": group_info["name"] if group_info else "Todos mis grupos", "grade": group_info["grade"] if group_info else "", "section": group_info["section"] if group_info else ""}
+    return render_template("grade_sheet.html", groups=groups, selected_group=group_id, classes=classes, students=students, sheet_info=sheet_info)
 
 
 @app.post("/grade-sheet/pdf")
@@ -3267,6 +3317,10 @@ def grade_sheet_pdf():
         flash("No hay clases y estudiantes disponibles para imprimir.", "error")
         return redirect(url_for("grade_sheet", group_id=group_id) if group_id else url_for("grade_sheet"))
     include_code = request.form.get("include_code") == "1"
+    current = settings(teacher_id)
+    with db() as connection:
+        teacher_info = connection.execute("SELECT name,academic_year FROM teachers WHERE id=?", (teacher_id,)).fetchone()
+        group_info = connection.execute("SELECT name,grade,section,academic_year FROM groups WHERE id=?", (group_id,)).fetchone() if group_id else None
     output = io.BytesIO(); page = landscape(legal)
     document = SimpleDocTemplate(output, pagesize=page, rightMargin=18, leftMargin=18, topMargin=18, bottomMargin=18)
     styles = getSampleStyleSheet(); small = ParagraphStyle("sheet_small", parent=styles["Normal"], fontSize=6, leading=7, alignment=TA_CENTER); name_style = ParagraphStyle("sheet_name", parent=small, alignment=0)
@@ -3277,10 +3331,14 @@ def grade_sheet_pdf():
     for chunk_index, class_chunk in enumerate(class_chunks):
         if chunk_index:
             story.append(PageBreak())
-        story.extend([Paragraph(escape(settings().get("school_name") or "Centro educativo"), styles["Title"]), Paragraph("SÁBANA DE NOTAS", styles["Heading2"]), Paragraph(f"Clases {chunk_index + 1} de {len(class_chunks)}", small), Spacer(1, 8)])
-        fixed_columns = 2 if include_code else 1
-        header_top = [Paragraph("Estudiante", small)] + ([Paragraph("Código", small)] if include_code else [])
-        header_bottom = [Paragraph("", small)] + ([Paragraph("", small)] if include_code else [])
+        school_name = current.get("school_name") or "Centro educativo"
+        teacher_name = teacher_info["name"] if teacher_info else current.get("teacher_name") or ""
+        academic_year = (group_info["academic_year"] if group_info else None) or (teacher_info["academic_year"] if teacher_info else None) or current.get("academic_year") or ""
+        group_label = " ".join(str(value) for value in ((group_info["grade"] if group_info else ""), (group_info["name"] if group_info else ""), (group_info["section"] if group_info else "")) if value)
+        story.extend([Paragraph(escape(school_name), styles["Title"]), Paragraph("SÁBANA DE NOTAS", styles["Heading2"]), Paragraph(escape(f"Docente: {teacher_name} · Año lectivo: {academic_year} · Grupo: {group_label or 'Todos mis grupos'}"), small), Paragraph(escape(f"Código del colegio: {current.get('school_code') or 'No registrado'}"), small), Paragraph(f"Clases {chunk_index + 1} de {len(class_chunks)}", small), Spacer(1, 8)])
+        fixed_columns = 3 if include_code else 2
+        header_top = [Paragraph("No.", small), Paragraph("Estudiante", small)] + ([Paragraph("Código", small)] if include_code else [])
+        header_bottom = [Paragraph("", small), Paragraph("", small)] + ([Paragraph("", small)] if include_code else [])
         spans = []
         for offset, item in enumerate(class_chunk):
             start = fixed_columns + offset * 5
@@ -3289,15 +3347,14 @@ def grade_sheet_pdf():
             spans.append((start, start + 4))
         rows = [header_top, header_bottom]
         for item in students:
-            row = [Paragraph(escape(item["student"]["name"]), name_style)] + ([Paragraph(escape(item["student"]["code"] or ""), small)] if include_code else [])
+            row = [Paragraph(str(len(rows) - 1), small), Paragraph(escape(item["student"]["name"]), name_style)] + ([Paragraph(escape(item["student"]["code"] or ""), small)] if include_code else [])
             for cls in class_chunk:
                 values = item["grades"].get(cls["id"], {})
                 scores = [values.get(partial) for partial in range(1, 5)]
-                valid = [score for score in scores if score is not None]
                 row += [Paragraph(str(round(score)) if score is not None else "—", small) for score in scores]
-                row.append(Paragraph(str(round(sum(valid) / len(valid))) if valid else "—", small))
+            row.append(Paragraph(str(round(sum(score or 0 for score in scores) / 4)), small))
             rows.append(row)
-        widths = [1.75*inch] + ([.7*inch] if include_code else []) + [.52*inch] * (5 * len(class_chunk))
+        widths = [.35*inch, 1.75*inch] + ([.7*inch] if include_code else []) + [.52*inch] * (5 * len(class_chunk))
         table_style = [("GRID", (0,0), (-1,-1), .35, colors.black), ("BACKGROUND", (0,0), (-1,0), "#1769a8"), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("BACKGROUND", (0,1), (-1,1), "#d9eaf7"), ("FONTNAME", (0,0), (-1,1), PDF_FONT_BOLD), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (-1,-1), "CENTER"), ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4)]
         for start, end in spans:
             table_style.append(("SPAN", (start, 0), (end, 0)))

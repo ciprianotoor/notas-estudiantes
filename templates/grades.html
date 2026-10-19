@@ -9,7 +9,7 @@
 {% for p in range(1,5) %}{% set row=partials.get(p) %}
 <details class="partial-card">
   <summary><span>{{ partial_name(p) }}</span><strong>{% if row %}{{ '%.2f'|format(row.result) }} / 100{% else %}Sin registrar{% endif %}</strong></summary>
-  <div class="partial-content"><form method="post"><fieldset {% if not can_edit_grades %}disabled{% endif %}><input type="hidden" name="partial" value="{{ p }}"><input type="hidden" name="subject_id" value="{{ current_subject_id }}">{% if is_admin %}<div class="admin-authorization"><strong>Autorización administrativa</strong><label>Contraseña actual<input name="admin_authorization" type="password" autocomplete="current-password" required></label><label>Motivo del cambio<textarea name="change_reason" required placeholder="Ej. Corrección autorizada por dirección"></textarea></label></div>{% endif %}
+  <div class="partial-content"><form method="post"><fieldset {% if not can_edit_grades %}disabled{% endif %}><input type="hidden" name="partial" value="{{ p }}"><input type="hidden" name="subject_id" value="{{ current_subject_id }}">{% if is_admin %}<div class="admin-authorization"><strong>Autorización administrativa</strong><label>Contraseña actual<input name="admin_authorization" type="password" autocomplete="current-password" required></label><label>Motivo del cambio<textarea name="change_reason" required placeholder="Ej. Corrección autorizada por dirección"></textarea></label></div>{% endif %}<details class="limit-override"><summary>Modificar valor máximo (requiere justificación)</summary><p class="muted">Por defecto: trabajos hasta 10 puntos y examen hasta 40 puntos.</p><div class="summary-grid"><label>Máximo por trabajo<input name="work_max" type="number" min="1" max="100" step="0.01" value="10"></label><label>Máximo del examen<input name="exam_max" type="number" min="1" max="100" step="0.01" value="40"></label></div><label>Justificación del cambio<textarea name="limit_reason" placeholder="Explica por qué se modifica la escala." required></textarea><input type="hidden" name="override_limits" value="1"></details>
     <div class="work-grid">{% for i in range(1,7) %}<label>Trabajo {{ i }}<input name="work{{ i }}" type="number" min="0" max="10" step="0.01" value="{{ row['work'~i] if row else 0 }}" required><small>Fecha</small><input name="work{{ i }}_date" type="date" value="{{ row['work'~i~'_date'] if row else '' }}"></label>{% endfor %}</div>
     <div class="summary-grid"><div><span>Acumulado de trabajos</span><strong>{% if row %}{{ '%.2f'|format(row.accumulated) }}{% else %}0.00{% endif %} / 60</strong></div><div class="exam-box"><label>Examen original (0–40)</label><input name="exam" type="number" min="0" max="40" step="0.01" value="{{ row.exam if row else 0 }}" required><small>Fecha de aplicación</small><input name="exam_date" type="date" value="{{ row.exam_date if row else '' }}"><small>Examen aplicado: {% if row %}{{ '%.2f'|format(applied_exam(row)) }}{% else %}0.00{% endif %}</small></div><div><span>Nota aplicada del parcial</span><strong class="final-score">{% if row %}{{ '%.2f'|format(row.result) }}{% else %}0.00{% endif %} / 100</strong></div></div>
     <div class="recovery-box"><h3>Rescate o extraordinario</h3><p class="muted">Solo si el acumulado es mayor de 50. Sustituye el examen y tiene máximo 40 puntos.</p><div class="summary-grid"><label>Tipo<select name="recovery_type"><option value="" {% if not row or not row.recovery_type %}selected{% endif %}>Sin registrar</option><option value="Trabajo de rescate" {% if row and row.recovery_type == 'Trabajo de rescate' %}selected{% endif %}>Trabajo de rescate</option><option value="Examen extraordinario" {% if row and row.recovery_type == 'Examen extraordinario' %}selected{% endif %}>Examen extraordinario</option></select></label><label>Nota (0–40)<input name="recovery_score" type="number" min="0" max="40" step="0.01" value="{{ row.recovery_score if row else 0 }}"></label><label>Fecha<input name="recovery_date" type="date" value="{{ row.recovery_date if row else '' }}"></label></div></div>
@@ -22,6 +22,34 @@
 <div class="actions no-print"><a class="button secondary" href="{{ url_for('students') }}">Volver a estudiantes</a>{% if is_guide or is_admin or is_secretary or is_director %}<a class="button" href="{{ url_for('teacher_pdf',student_id=student.id) }}">Imprimir boleta</a><a class="button" href="{{ url_for('certificates',student_id=student.id) }}">Generar constancia</a>{% endif %}</div>
 <style>.partial-workspace{margin-top:1rem}.partial-toolbar{position:sticky;top:.5rem;z-index:4;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.8rem 1rem;margin-bottom:.8rem;background:#eef6ff;border:1px solid #bfdbfe;border-radius:10px;box-shadow:0 5px 16px #102a4318}.partial-toolbar strong,.partial-toolbar small{display:block}.partial-toolbar small{color:#667085;margin-top:.2rem}.partial-tools{display:flex;gap:.45rem;flex-wrap:wrap}.partial-tools button{width:auto;margin:0;padding:.45rem .7rem;font-size:.82rem}.partials-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1rem}.partial-card{background:white;border-radius:12px;box-shadow:0 2px 12px #17203312;overflow:hidden;min-width:0;border:1px solid #e5eaf0}.partial-card summary{cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:1rem 1.2rem;font-size:1.05rem;font-weight:700;list-style:none;background:linear-gradient(90deg,#f8fbff,#fff)}.partial-card summary::-webkit-details-marker{display:none}.partial-card summary:after{content:'+';color:#2563eb;font-size:1.4rem}.partial-card[open] summary:after{content:'−'}.partial-card[open] summary{border-bottom:1px solid #eaecf0;background:#eff6ff}.partial-card summary strong{color:#087443}.partial-content{border-top:0;padding:1.1rem}.work-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7rem}.work-grid label{font-size:.9rem}.work-grid small{display:block;color:#667085;margin-top:.35rem}.summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;margin-top:1rem;align-items:end}.summary-grid>div{background:#f8fafc;padding:.65rem;border-radius:8px}.summary-grid span{display:block;color:#667085;font-size:.8rem}.summary-grid strong{display:block;font-size:1.2rem;margin-top:.3rem}.exam-box{border:2px solid #2563eb!important;background:#eff6ff!important;text-align:left}.final-score{color:#087443}.recovery-box{background:#fff8eb;border:1px solid #fedf89;border-radius:8px;padding:.8rem;margin:1rem 0}.recovery-box h3{margin-top:0}.help{color:#667085;font-size:.9rem}.save-button{background:#b42318}.save-button:hover{background:#8f1d14}.admin-authorization{padding:.8rem;margin-bottom:1rem;background:#fff8eb;border:1px solid #fedf89;border-radius:8px}.admin-authorization strong{display:block;margin-bottom:.5rem;color:#8a4b08}@media(max-width:720px){.partial-toolbar{position:static;display:block}.partial-tools{margin-top:.7rem}.partials-grid{grid-template-columns:minmax(0,1fr)}.summary-grid,.work-grid{grid-template-columns:minmax(0,1fr)}.partial-content{padding:.85rem}}</style>
 <script>
+document.querySelectorAll('.limit-override').forEach(function(panel) {
+  var workMax = panel.querySelector('input[name="work_max"]');
+  var examMax = panel.querySelector('input[name="exam_max"]');
+  var form = panel.closest('form');
+  var reason = panel.querySelector('textarea[name="limit_reason"]');
+  var override = panel.querySelector('input[name="override_limits"]');
+  function syncOverride() {
+    var enabled = override && (override.type === 'hidden' ? !!(reason && reason.value.trim()) : override.checked);
+    if (reason) reason.required = enabled;
+    if (!enabled) {
+      var hidden = form.querySelector('input[type="hidden"][name="override_limits"]');
+      if (hidden) hidden.remove();
+    }
+  }
+  function syncLimits() {
+    var workLimit = Number(workMax.value) || 10;
+    var examLimit = Number(examMax.value) || 40;
+    form.querySelectorAll('input[name^="work"][type="number"]').forEach(function(input) { input.max = workLimit; });
+    var exam = form.querySelector('input[name="exam"]'); if (exam) exam.max = examLimit;
+  }
+  workMax.addEventListener('input', syncLimits);
+  examMax.addEventListener('input', syncLimits);
+  panel.addEventListener('toggle', syncLimits);
+  if (override) override.addEventListener('change', syncOverride);
+  form.addEventListener('submit', syncOverride);
+  syncLimits();
+  syncOverride();
+});
 document.addEventListener('DOMContentLoaded', function() {
   var cards = Array.from(document.querySelectorAll('.partials-grid .partial-card'));
   function setCards(open) { cards.forEach(function(card) { card.open = open; }); }

@@ -33,6 +33,22 @@ Conducta conserva cuantitativa, cualitativa, criterios, incidentes y observacion
 
 La baja conserva notas y expediente. Desde “Dados de baja” se puede restablecer matrícula, exportar CSV, imprimir o eliminar definitivamente; esto último solo Admin/Dirección y con confirmación. Al imprimir una boleta individual o en lote puedes elegir clases y parciales, además de incluir u ocultar Conducta y seleccionar qué datos mostrar: cuantitativa, cualitativa, criterios utilizados, incidentes y observaciones. En “Imprimir notas” se pueden filtrar y seleccionar varios estudiantes; cada uno sale en su propia página del PDF. Las boletas individuales se descargan con nombre y grado, por ejemplo `boletin-Nombre_Estudiante-9no.pdf`; la versión plegable añade `-a4-plegable`.
 
+## Sábana de notas
+
+Desde “Sábana de notas” el docente guía consulta el consolidado de sus grupos. Los estudiantes aparecen en orden alfabético y las clases se muestran como columnas, cada una con sus cuatro parciales y promedio. La vista incluye número, código, año lectivo, docente, grupo y datos del colegio. Antes de imprimir se puede revisar la vista previa y escoger opciones. El formato recomendado es Legal horizontal; cuando el número de clases no permite una sola página, se generan varias páginas conservando los encabezados.
+
+## Estadística académica y bajas
+
+“Estadística” contiene dos consultas separadas. La primera identifica por estudiante las materias reprobadas, con nombre, código, grupo y nota anual. La nota anual es `(P1 + P2 + P3 + P4) / 4`; un parcial sin registro cuenta como cero y una materia menor de 60 se considera reprobada. La segunda lista estudiantes retirados o dados de baja, con fecha y motivo, sin borrar sus notas históricas. El docente guía ve únicamente sus grupos; Admin y Secretaría ven el alcance institucional autorizado.
+
+## Límites, permisos y auditoría
+
+Cada trabajo tiene un límite predeterminado de 10 puntos y el examen de 40 puntos. Un docente no puede superar esos valores desde el formulario. Si existe una justificación válida, la opción “Modificar valor máximo” solicita nuevos límites y una explicación; el cambio queda registrado con docente, fecha, hora, parcial, límites y motivo. Admin puede realizar tareas administrativas y sus modificaciones sensibles también quedan registradas.
+
 ## Tema, ayuda y pruebas
 
 Admin configura identidad y colores desde “Configuración”. El Docente guía tiene selector personal Día/Noche. La ayuda está en la barra superior. Ejecutar las pruebas con `.venv/bin/pytest -q`. En producción usar WSGI, SECRET_KEY segura y respaldos cifrados.
+
+## Uso desde PC, tablet y teléfono
+
+La barra superior adapta sus botones a pantallas grandes y pequeñas. En teléfonos los enlaces se pueden desplazar horizontalmente; si no aparecen los últimos botones, desliza la barra de navegación hacia la izquierda. Si el navegador muestra estilos anteriores, realiza una recarga forzada (`Ctrl+F5` en PC) o cierra y abre nuevamente la página en Android.
