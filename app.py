@@ -2733,7 +2733,7 @@ def export_xlsx():
             for title, query in {
                 "Usuarios": "SELECT id,name,email,account_type,is_admin,employment_status FROM teachers ORDER BY name",
                 "Grupos": "SELECT id,name,grade,section,academic_year,teacher_id FROM groups ORDER BY name",
-                "Materias": "SELECT id,name,grade,year,active FROM subjects ORDER BY name",
+                "Materias": "SELECT id,name,grade,year,created_by,created_at FROM subjects ORDER BY name",
                 "Clases": "SELECT id,name,subject_id,grade,year,section,group_id,teacher_id FROM classes ORDER BY name",
                 "Auditoría": "SELECT * FROM grade_audit ORDER BY created_at DESC",
             }.items():
