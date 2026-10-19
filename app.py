@@ -2685,8 +2685,10 @@ def edit_teacher(teacher_id):
 @teacher_required
 def export_xlsx():
     teacher_id = session.get("teacher_id")
-    if not (teacher_is_admin(teacher_id) or is_guide_teacher(teacher_id)):
-        flash("Solo el administrador o el docente guía pueden exportar datos.", "error")
+    can_export_all = (teacher_is_admin(teacher_id) or teacher_is_director(teacher_id)
+                      or teacher_is_secretary(teacher_id))
+    if not (can_export_all or is_guide_teacher(teacher_id)):
+        flash("Esta cuenta no tiene permiso para exportar datos.", "error")
         return redirect(url_for("index"))
     workbook = Workbook()
     students_sheet = workbook.active
@@ -2706,8 +2708,8 @@ def export_xlsx():
             {scope}
             ORDER BY s.name, pg.partial
         """
-        scope = "" if teacher_is_admin(teacher_id) else "WHERE g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?)"
-        params = () if teacher_is_admin(teacher_id) else (teacher_id, teacher_id)
+        scope = "" if can_export_all else "WHERE g.teacher_id=? OR (s.group_id IS NULL AND s.teacher_id=?)"
+        params = () if can_export_all else (teacher_id, teacher_id)
         students = connection.execute(student_query.format(scope=scope), params).fetchall()
         grades = connection.execute(grade_query.format(scope=scope), params).fetchall()
     for student in students:
@@ -2725,19 +2727,22 @@ def export_xlsx():
     for key in ("school_name", "teacher_name", "group_name", "evaluation_criteria"):
         config_sheet.append([key, current[key]])
     if teacher_is_admin(teacher_id):
-        for title, query in {
-            "Usuarios": "SELECT id,name,email,account_type,is_admin,employment_status FROM teachers ORDER BY name",
-            "Grupos": "SELECT id,name,grade,section,academic_year,teacher_id FROM groups ORDER BY name",
-            "Materias": "SELECT id,name,grade,year,active FROM subjects ORDER BY name",
-            "Clases": "SELECT id,name,subject_id,grade,year,section,group_id,teacher_id FROM classes ORDER BY name",
-            "Auditoría": "SELECT * FROM grade_audit ORDER BY created_at DESC",
-        }.items():
-            sheet = workbook.create_sheet(title)
-            rows = connection.execute(query).fetchall()
-            if rows:
-                sheet.append(list(rows[0].keys()))
-                for row in rows:
-                    sheet.append([row[key] for key in row.keys()])
+        # This is a separate connection because the main read-only scope above
+        # ends before the administrator-only sheets are built.
+        with db() as connection:
+            for title, query in {
+                "Usuarios": "SELECT id,name,email,account_type,is_admin,employment_status FROM teachers ORDER BY name",
+                "Grupos": "SELECT id,name,grade,section,academic_year,teacher_id FROM groups ORDER BY name",
+                "Materias": "SELECT id,name,grade,year,active FROM subjects ORDER BY name",
+                "Clases": "SELECT id,name,subject_id,grade,year,section,group_id,teacher_id FROM classes ORDER BY name",
+                "Auditoría": "SELECT * FROM grade_audit ORDER BY created_at DESC",
+            }.items():
+                sheet = workbook.create_sheet(title)
+                rows = connection.execute(query).fetchall()
+                if rows:
+                    sheet.append(list(rows[0].keys()))
+                    for row in rows:
+                        sheet.append([row[key] for key in row.keys()])
     for sheet in workbook.worksheets:
         sheet.freeze_panes = "A2"
         for column in sheet.columns:
