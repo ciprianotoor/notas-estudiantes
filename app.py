@@ -958,16 +958,13 @@ def get_teacher_subjects_for_student(student_id, teacher_id=None):
             """, (student_id, student_id)).fetchall()
         if teacher_is_director(teacher_id):
             return connection.execute("SELECT * FROM subjects ORDER BY name").fetchall()
-        if get_teacher_role(teacher_id) in ("guide", "teacher"):
+        if is_guide_teacher(teacher_id):
             return connection.execute("""
                 SELECT DISTINCT s.*
                 FROM subjects s
                 WHERE EXISTS (
-                    SELECT 1 FROM subject_catalog sc
-                    WHERE sc.name=s.name COLLATE NOCASE AND sc.active=1
-                ) OR EXISTS (
                     SELECT 1 FROM classes c
-                    WHERE c.subject_id=s.id AND c.group_id=(
+                    WHERE c.subject_id=s.id AND c.teacher_id=? AND c.group_id=(
                         SELECT group_id FROM students WHERE id=?
                     )
                 ) OR EXISTS (
@@ -975,7 +972,7 @@ def get_teacher_subjects_for_student(student_id, teacher_id=None):
                     WHERE pg.subject_id=s.id AND pg.student_id=?
                 )
                 ORDER BY s.name
-            """, (student_id, student_id)).fetchall()
+            """, (teacher_id, student_id, student_id)).fetchall()
         return connection.execute("""
             SELECT DISTINCT s.*
             FROM subjects s
@@ -2071,8 +2068,9 @@ def change_student_classes(student_id):
 @teacher_required
 def grades(student_id):
     teacher_id = session.get("teacher_id")
-    can_edit_grades = (teacher_is_admin(teacher_id)
-                       or get_teacher_role(teacher_id) in ("teacher", "guide"))
+    # Admin has full emergency/maintenance access; the normal academic
+    # editor is the Docente guía. Director and Secretaría remain read-only.
+    can_edit_grades = teacher_is_admin(teacher_id) or is_guide_teacher(teacher_id)
     if request.method == "POST" and not can_edit_grades:
         flash("Esta cuenta no puede modificar las notas.", "error")
         return redirect(url_for("grades", student_id=student_id, subject_id=request.form.get("subject_id", type=int)))
@@ -2109,6 +2107,14 @@ def grades(student_id):
         if not teacher_can_access_subject_for_student(student_id, subject_id, teacher_id):
             flash("No tienes acceso a esta materia para el estudiante.", "error")
             return redirect(url_for("students"))
+        if teacher_is_admin(teacher_id):
+            authorization = request.form.get("admin_authorization", "")
+            change_reason = request.form.get("change_reason", "").strip()
+            with db() as connection:
+                admin_row = connection.execute("SELECT password FROM teachers WHERE id=?", (teacher_id,)).fetchone()
+            if not admin_row or not authorization or not check_password_hash(admin_row["password"], authorization) or not change_reason:
+                flash("Para cambios del administrador se requiere la contraseña actual y el motivo del cambio.", "error")
+                return redirect(url_for("grades", student_id=student_id, subject_id=subject_id))
         with db() as connection:
             selected_subject = connection.execute("SELECT name FROM subjects WHERE id=?", (subject_id,)).fetchone()
         if selected_subject and selected_subject["name"].strip().lower() == "conducta":
@@ -2157,8 +2163,11 @@ def grades(student_id):
                     work3_date=excluded.work3_date,work4_date=excluded.work4_date,work5_date=excluded.work5_date,
                     work6_date=excluded.work6_date""",
                     (student_id, partial, subject_id, teacher_id, *values, exam, exam_date, recovery_type, recovery_score, recovery_date, status, attendance, comments, *dates))
+                audit_details = f"Nota parcial {grade_value({'work1': values[0], 'work2': values[1], 'work3': values[2], 'work4': values[3], 'work5': values[4], 'work6': values[5], 'exam': exam})} (subject_id={subject_id})"
+                if teacher_is_admin(teacher_id):
+                    audit_details += f" · Motivo admin: {change_reason}"
                 connection.execute("INSERT INTO grade_audit(student_id,partial,action,details,actor_teacher_id) VALUES(?,?,?,?,?)",
-                                   (student_id, partial, "Actualización", f"Nota parcial {grade_value({'work1': values[0], 'work2': values[1], 'work3': values[2], 'work4': values[3], 'work5': values[4], 'work6': values[5], 'exam': exam})} (subject_id={subject_id})", teacher_id))
+                                   (student_id, partial, "Actualización", audit_details, teacher_id))
             flash(f"{partial_name(partial)} guardado.", "success")
             return redirect(url_for("grades", student_id=student_id, subject_id=subject_id))
     partials, final = subject_summary(student_id, selected_subject_id)
@@ -2994,7 +3003,7 @@ def requested_conduct_options(source):
     }
 
 
-def make_certificate_pdf(student_id, subject_ids, selected_partials, include_average=True):
+def make_certificate_pdf(student_id, subject_ids, selected_partials, include_average=True, formal_tables=True):
     """Genera una constancia interna con materias y cortes elegidos."""
     teacher_id = session.get("teacher_id")
     if not teacher_can_access_student(student_id, teacher_id):
@@ -3039,7 +3048,9 @@ def make_certificate_pdf(student_id, subject_ids, selected_partials, include_ave
     identity = [[Paragraph("ESTUDIANTE", header), Paragraph("CÓDIGO", header), Paragraph("GRADO / GRUPO", header), Paragraph("AÑO LECTIVO", header)],
                 [Paragraph(escape(student["name"]), center), Paragraph(escape(student["code"]), center), Paragraph(escape(f"{student['group_grade'] or ''} {student['group_name'] or ''}".strip() or "—"), center), Paragraph(escape(str(student["group_year"] or current.get("academic_year") or "—")), center)]]
     identity_table = Table(identity, colWidths=[2.7*inch, 1.15*inch, 1.45*inch, 1.0*inch], hAlign="CENTER")
-    identity_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 6), ("RIGHTPADDING", (0,0), (-1,-1), 6)]))
+    identity_style = [("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("LEFTPADDING", (0,0), (-1,-1), 6), ("RIGHTPADDING", (0,0), (-1,-1), 6)]
+    if formal_tables: identity_style.append(("GRID", (0,0), (-1,-1), 0.6, colors.black))
+    identity_table.setStyle(TableStyle(identity_style))
     story.append(identity_table)
     story.append(Spacer(1, 18))
     columns = ["Materia"] + [partial_name(p).replace("Parcial ", "P. ") for p in selected_partials]
@@ -3056,7 +3067,9 @@ def make_certificate_pdf(student_id, subject_ids, selected_partials, include_ave
         data.append(values)
     widths = [3.1*inch] + [0.72*inch] * len(selected_partials) + ([0.85*inch] if include_average else [])
     table = Table(data, colWidths=widths, repeatRows=1, hAlign="CENTER")
-    table.setStyle(TableStyle([("TEXTCOLOR", (0,0), (-1,0), colors.black), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,1), (-1,-1), "CENTER"), ("LEFTPADDING", (0,0), (-1,-1), 5), ("RIGHTPADDING", (0,0), (-1,-1), 5), ("TOPPADDING", (0,0), (-1,-1), 7), ("BOTTOMPADDING", (0,0), (-1,-1), 7)]))
+    table_style = [("TEXTCOLOR", (0,0), (-1,0), colors.black), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,1), (-1,-1), "CENTER"), ("LEFTPADDING", (0,0), (-1,-1), 5), ("RIGHTPADDING", (0,0), (-1,-1), 5), ("TOPPADDING", (0,0), (-1,-1), 7), ("BOTTOMPADDING", (0,0), (-1,-1), 7)]
+    if formal_tables: table_style.append(("GRID", (0,0), (-1,-1), 0.6, colors.black))
+    table.setStyle(TableStyle(table_style))
     story.extend([table, Spacer(1, 14), Paragraph("Escalas", header)])
     scale = [[Paragraph("Cuantitativa", header), Paragraph("Cualitativa", header), Paragraph("Equivalencia", header)],
              [Paragraph("90–100", center), Paragraph("Aprendizaje Avanzado (AA)", center), Paragraph("AA", center)],
@@ -3064,11 +3077,15 @@ def make_certificate_pdf(student_id, subject_ids, selected_partials, include_ave
              [Paragraph("60–75", center), Paragraph("Aprendizaje Fundamental (AF)", center), Paragraph("AF", center)],
              [Paragraph("Menos de 60", center), Paragraph("Aprendizaje Inicial (AI)", center), Paragraph("AI", center)]]
     scale_table = Table(scale, colWidths=[1.35*inch, 3.25*inch, 1.1*inch], hAlign="CENTER")
-    scale_table.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE")]))
+    scale_style = [("VALIGN", (0,0), (-1,-1), "MIDDLE")]
+    if formal_tables: scale_style.append(("GRID", (0,0), (-1,-1), 0.6, colors.black))
+    scale_table.setStyle(TableStyle(scale_style))
     story.append(scale_table)
     story.extend([Spacer(1, 18), Paragraph(f"Parciales incluidos: {escape(', '.join(partial_name(p) for p in selected_partials))}. Se muestra SC cuando no existe calificación registrada.", small), Spacer(1, 32)])
     signatures = Table([[Paragraph("____________________________", center), Paragraph("____________________________", center)], [Paragraph("Docente guía", center), Paragraph("Director(a) / responsable", center)], [Paragraph(escape(guide), center), Paragraph("____________________________", center)]], colWidths=[3.1*inch, 3.1*inch], hAlign="CENTER")
-    signatures.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 3), ("BOTTOMPADDING", (0,0), (-1,-1), 3)]))
+    signature_style = [("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("TOPPADDING", (0,0), (-1,-1), 3), ("BOTTOMPADDING", (0,0), (-1,-1), 3)]
+    if formal_tables: signature_style.append(("BOX", (0,0), (-1,-1), 0.4, colors.black))
+    signatures.setStyle(TableStyle(signature_style))
     story.append(signatures)
     doc.build(story)
     buffer.seek(0)
@@ -3180,6 +3197,119 @@ def teacher_selected_pdf():
     )
 
 
+def grade_sheet_data(teacher_id, group_id=None, class_ids=None):
+    """Return the teacher's classes, students and four-partial grade matrix."""
+    with db() as connection:
+        class_params = [teacher_id, teacher_id]
+        class_sql = """SELECT c.id,c.name,c.subject_id,s.name AS subject_name
+            FROM classes c JOIN subjects s ON s.id=c.subject_id
+            WHERE (c.teacher_id=? OR c.group_id IN (SELECT id FROM groups WHERE teacher_id=?))"""
+        if group_id:
+            class_sql += " AND c.group_id=?"; class_params.append(group_id)
+        if class_ids:
+            class_sql += " AND c.id IN ({})".format(",".join("?" for _ in class_ids)); class_params.extend(class_ids)
+        # Keep the same subject/group ordering used by the boletín so both
+        # documents present the classes in an identical sequence.
+        class_sql += " ORDER BY s.name, c.group_id, c.grade, c.section, c.name"
+        classes = connection.execute(class_sql, class_params).fetchall()
+        if not classes: return [], []
+        ids = [row["id"] for row in classes]
+        marks = connection.execute("""SELECT s.id AS student_id,c.id AS class_id,pg.*
+            FROM students s JOIN classes c ON c.id IN ({})
+            LEFT JOIN partial_grades pg ON pg.student_id=s.id AND pg.subject_id=c.subject_id
+            WHERE s.enrollment_status='active'
+              AND (s.group_id=c.group_id OR EXISTS (
+                  SELECT 1 FROM student_classes sc WHERE sc.student_id=s.id AND sc.class_id=c.id
+              ))
+            ORDER BY pg.partial""".format(",".join("?" for _ in ids)), ids).fetchall()
+        students = connection.execute("""SELECT DISTINCT s.id,s.name,s.code
+            FROM students s JOIN classes c ON c.id IN ({})
+            WHERE s.enrollment_status='active'
+              AND (s.group_id=c.group_id OR EXISTS (
+                  SELECT 1 FROM student_classes sc WHERE sc.student_id=s.id AND sc.class_id=c.id
+              ))
+            ORDER BY s.name COLLATE NOCASE""".format(",".join("?" for _ in ids)), ids).fetchall()
+        conduct_marks = connection.execute("""SELECT ce.student_id,c.id AS class_id,ce.partial,ce.quantitative
+            FROM conduct_evaluations ce JOIN classes c ON c.id IN ({})
+            JOIN subjects s ON s.id=c.subject_id AND lower(trim(s.name))='conducta'
+            WHERE ce.student_id IN (SELECT id FROM students WHERE enrollment_status='active')
+            ORDER BY ce.partial""".format(",".join("?" for _ in ids)), ids).fetchall()
+    by_student = {row["id"]: {"student": row, "grades": {cid: {} for cid in ids}} for row in students}
+    for row in marks:
+        if row["student_id"] in by_student and row["partial"]:
+            item = {**dict(row), "result": applied_grade(dict(row))}
+            by_student[row["student_id"]]["grades"][row["class_id"]][row["partial"]] = item["result"]
+    for row in conduct_marks:
+        if row["student_id"] in by_student and row["partial"] and row["class_id"] in by_student[row["student_id"]]["grades"]:
+            by_student[row["student_id"]]["grades"][row["class_id"]][row["partial"]] = row["quantitative"]
+    return classes, list(by_student.values())
+
+
+@app.route("/grade-sheet", methods=["GET"])
+@teacher_required
+def grade_sheet():
+    teacher_id = session.get("teacher_id")
+    group_id = request.args.get("group_id", type=int)
+    with db() as connection:
+        groups = connection.execute("SELECT DISTINCT g.id,g.name FROM groups g JOIN classes c ON c.group_id=g.id WHERE c.teacher_id=? ORDER BY g.name", (teacher_id,)).fetchall()
+    classes, students = grade_sheet_data(teacher_id, group_id)
+    return render_template("grade_sheet.html", groups=groups, selected_group=group_id, classes=classes, students=students)
+
+
+@app.post("/grade-sheet/pdf")
+@teacher_required
+def grade_sheet_pdf():
+    teacher_id = session.get("teacher_id")
+    group_id = request.form.get("group_id", type=int)
+    class_ids = [value for value in request.form.getlist("class_id") if value.isdigit()]
+    classes, students = grade_sheet_data(teacher_id, group_id, [int(value) for value in class_ids] or None)
+    if not classes or not students:
+        flash("No hay clases y estudiantes disponibles para imprimir.", "error")
+        return redirect(url_for("grade_sheet", group_id=group_id) if group_id else url_for("grade_sheet"))
+    include_code = request.form.get("include_code") == "1"
+    output = io.BytesIO(); page = landscape(legal)
+    document = SimpleDocTemplate(output, pagesize=page, rightMargin=18, leftMargin=18, topMargin=18, bottomMargin=18)
+    styles = getSampleStyleSheet(); small = ParagraphStyle("sheet_small", parent=styles["Normal"], fontSize=6, leading=7, alignment=TA_CENTER); name_style = ParagraphStyle("sheet_name", parent=small, alignment=0)
+    # A Legal landscape page fits four class blocks comfortably. More classes
+    # continue on additional Legal pages instead of being squeezed or clipped.
+    class_chunks = [classes[index:index + 4] for index in range(0, len(classes), 4)]
+    story = []
+    for chunk_index, class_chunk in enumerate(class_chunks):
+        if chunk_index:
+            story.append(PageBreak())
+        story.extend([Paragraph(escape(settings().get("school_name") or "Centro educativo"), styles["Title"]), Paragraph("SÁBANA DE NOTAS", styles["Heading2"]), Paragraph(f"Clases {chunk_index + 1} de {len(class_chunks)}", small), Spacer(1, 8)])
+        fixed_columns = 2 if include_code else 1
+        header_top = [Paragraph("Estudiante", small)] + ([Paragraph("Código", small)] if include_code else [])
+        header_bottom = [Paragraph("", small)] + ([Paragraph("", small)] if include_code else [])
+        spans = []
+        for offset, item in enumerate(class_chunk):
+            start = fixed_columns + offset * 5
+            header_top += [Paragraph(escape(item["name"]), small)] * 5
+            header_bottom += [Paragraph(label, small) for label in ("IC", "IIC", "IIIC", "IV", "NF")]
+            spans.append((start, start + 4))
+        rows = [header_top, header_bottom]
+        for item in students:
+            row = [Paragraph(escape(item["student"]["name"]), name_style)] + ([Paragraph(escape(item["student"]["code"] or ""), small)] if include_code else [])
+            for cls in class_chunk:
+                values = item["grades"].get(cls["id"], {})
+                scores = [values.get(partial) for partial in range(1, 5)]
+                valid = [score for score in scores if score is not None]
+                row += [Paragraph(str(round(score)) if score is not None else "—", small) for score in scores]
+                row.append(Paragraph(str(round(sum(valid) / len(valid))) if valid else "—", small))
+            rows.append(row)
+        widths = [1.75*inch] + ([.7*inch] if include_code else []) + [.52*inch] * (5 * len(class_chunk))
+        table_style = [("GRID", (0,0), (-1,-1), .35, colors.black), ("BACKGROUND", (0,0), (-1,0), "#1769a8"), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("BACKGROUND", (0,1), (-1,1), "#d9eaf7"), ("FONTNAME", (0,0), (-1,1), PDF_FONT_BOLD), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (1,0), (-1,-1), "CENTER"), ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4)]
+        for start, end in spans:
+            table_style.append(("SPAN", (start, 0), (end, 0)))
+            table_style.append(("BACKGROUND", (start, 1), (end, 1), "#e8f2f8"))
+            table_style.append(("BACKGROUND", (end, 2), (end, -1), "#fff1c2"))
+        table = Table(rows, colWidths=widths, repeatRows=2)
+        table.setStyle(TableStyle(table_style))
+        story.append(table)
+    document.build(story); output.seek(0)
+    return send_file(output, mimetype="application/pdf", as_attachment=True, download_name="sabana-de-notas.pdf")
+
+
 @app.route("/certificates", methods=["GET", "POST"])
 @report_access_required
 def certificates():
@@ -3207,7 +3337,7 @@ def certificates():
                 subject_ids.append(int(value))
             except (TypeError, ValueError):
                 continue
-        return make_certificate_pdf(selected_student_id, subject_ids, requested_partials(request.form, default_all=False), request.form.get("include_average") == "1")
+        return make_certificate_pdf(selected_student_id, subject_ids, requested_partials(request.form, default_all=False), request.form.get("include_average") == "1", request.form.get("format", "formal") == "formal")
     return render_template("certificates.html", students=students, selected_student=selected_student, subjects=subjects)
 
 
