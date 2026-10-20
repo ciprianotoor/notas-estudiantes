@@ -123,6 +123,31 @@ puerto. La selección se guarda en `network.json` junto al ejecutable y puede
 modificarse en cada arranque. Para acceder desde otro equipo, permite el puerto
 elegido en el Firewall de Windows y usa la IP LAN o Tailscale del equipo.
 
+#### Uso paso a paso
+
+1. Ejecuta `NotasEstudiantes.exe`.
+2. En **Dirección de escucha**, selecciona una opción:
+   - **Solo este equipo**: acceso únicamente desde esa computadora.
+   - **LAN · 192.168.x.x**: acceso desde la red local.
+   - **Tailscale · 100.x.x.x**: acceso desde equipos conectados a Tailscale.
+   - **Todas las interfaces**: escucha por LAN y Tailscale al mismo tiempo.
+   - **IP manual**: escribe una dirección específica.
+3. Define el puerto, normalmente `5000`, y pulsa **Guardar y arrancar**.
+4. Desde el mismo equipo abre `http://127.0.0.1:5000/login`.
+5. Desde otro equipo usa `http://IP_ELEGIDA:5000/login`, por ejemplo:
+   `http://192.168.1.25:5000/login` o `http://100.100.20.15:5000/login`.
+
+Si Windows bloquea la conexión, permite el puerto seleccionado en el Firewall
+(ejecuta PowerShell como administrador):
+
+```powershell
+New-NetFirewallRule -DisplayName "Notas Estudiantes 5000" -Direction Inbound -Protocol TCP -LocalPort 5000 -Action Allow
+```
+
+La selección queda guardada en `network.json`. Si necesitas cambiar de LAN a
+Tailscale, cierra la aplicación y vuelve a abrirla para mostrar nuevamente el
+menú de configuración.
+
 ### Compilar el instalador de Windows
 
 La compilación se hace en Windows 10 u 11. En el equipo donde se compila se
