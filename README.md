@@ -118,7 +118,7 @@ Para producción usa un servidor WSGI detrás de un proxy, define una `SECRET_KE
 
 Al iniciar `NotasEstudiantes.exe` aparece un menú para elegir la dirección de
 escucha: solo este equipo (`127.0.0.1`), todas las interfaces para LAN/Tailscale
-(`0.0.0.0`), una IP detectada o una IP manual. También permite cambiar el
+(`0.0.0.0`) o una IP detectada identificada como **LAN** o **Tailscale**. También permite cambiar el
 puerto. La selección se guarda en `network.json` junto al ejecutable y puede
 modificarse en cada arranque. Para acceder desde otro equipo, permite el puerto
 elegido en el Firewall de Windows y usa la IP LAN o Tailscale del equipo.

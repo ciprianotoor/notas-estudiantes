@@ -2,6 +2,7 @@
 
 import os
 import json
+import ipaddress
 import secrets
 import socket
 import sys
@@ -29,6 +30,20 @@ def local_ipv4_addresses() -> list[str]:
     return sorted(addresses, key=lambda value: (value != "127.0.0.1", value))
 
 
+def address_label(address: str) -> str:
+    if address == "127.0.0.1":
+        return "Solo este equipo"
+    try:
+        ip = ipaddress.ip_address(address)
+        if ip in ipaddress.ip_network("100.64.0.0/10"):
+            return "Tailscale"
+        if ip.is_private:
+            return "LAN"
+    except ValueError:
+        pass
+    return "Red"
+
+
 def network_settings(base_dir: Path) -> tuple[str, int, str]:
     config_path = base_dir / "network.json"
     defaults = {"host": "127.0.0.1", "port": 5000}
@@ -50,9 +65,9 @@ def network_settings(base_dir: Path) -> tuple[str, int, str]:
     ttk.Label(root, text="Elige cómo podrán acceder a Notas Estudiantes.").grid(row=1, column=0, columnspan=2, padx=22, pady=(0, 14))
     ttk.Label(root, text="Dirección de escucha:").grid(row=2, column=0, sticky="w", padx=(22, 10), pady=5)
     choices = [
-        ("Solo este equipo (127.0.0.1)", "127.0.0.1"),
-        ("Todas las interfaces (LAN/Tailscale)", "0.0.0.0"),
-    ] + [(f"IP detectada: {address}", address) for address in addresses if address != "127.0.0.1"]
+        ("Solo este equipo · 127.0.0.1", "127.0.0.1"),
+        ("Todas las interfaces · LAN/Tailscale · 0.0.0.0", "0.0.0.0"),
+    ] + [(f"{address_label(address)} · {address}", address) for address in addresses if address != "127.0.0.1"]
     labels = {label: value for label, value in choices}
     label_by_value = {value: label for label, value in choices}
     address_box = ttk.Combobox(root, state="readonly", width=34, values=list(labels), textvariable=tk.StringVar(value=label_by_value.get(selected.get(), choices[0][0])))
