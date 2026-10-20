@@ -54,6 +54,17 @@ El servicio escucha en el puerto `5000` y conserva la información en el volumen
 5. El Docente guía registra Conducta por parcial con cuantitativa, cualitativa automática, criterios, incidentes y observaciones.
 6. Admin, Director y Secretaría consultan e imprimen boletas.
 
+## Módulo de matrícula
+
+El módulo **Matrículas** centraliza la gestión de estudiantes en una sola pantalla.
+Permite consultar grupos, ver estudiantes activos y dados de baja, revisar las
+últimas matrículas y entrar al flujo de registro o actualización de materias.
+Está disponible desde el menú principal en `/enrollment`.
+
+Los permisos se mantienen separados: Admin tiene acceso total; Director y
+Docente guía pueden gestionar según su alcance; Secretaría tiene consulta de
+solo lectura.
+
 ## Roles y permisos
 
 - **Admin / Soporte:** usuarios, catálogo, configuración institucional, tema, reportes y respaldos. Consulta e imprime; no registra notas.

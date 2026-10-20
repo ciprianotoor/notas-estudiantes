@@ -184,7 +184,10 @@ def init_db():
             observation TEXT DEFAULT '',
             recorded_by INTEGER,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(student_id, attendance_date, partial),
+            -- Keep the initial definition compatible with installations that
+            -- predate per-partial attendance; the migration below adds the
+            -- `partial` column and rebuilds the legacy unique index.
+            UNIQUE(student_id, attendance_date),
             FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
             FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
         );
@@ -672,6 +675,9 @@ CONDUCT_LABEL_DEFAULTS = {"responsibility":"Responsabilidad", "discipline":"Disc
 
 def conduct_labels():
     values = settings() or {}
+    # `settings()` normalmente devuelve un sqlite3.Row; convertirlo a dict
+    # permite usar `.get()` tanto con filas de SQLite como con valores fallback.
+    values = dict(values)
     try: saved = json.loads(values.get("conduct_labels") or "{}")
     except (TypeError, ValueError): saved = {}
     return {**CONDUCT_LABEL_DEFAULTS, **{k: v for k, v in saved.items() if k in CONDUCT_LABEL_DEFAULTS and v.strip()}}
@@ -1913,6 +1919,57 @@ def delete_assignment(teacher_id, subject_id):
     return redirect(url_for("assignments_view"))
 
 
+@app.get("/enrollment")
+@teacher_required
+def enrollment():
+    """Panel central de matrícula y consulta de expedientes."""
+    teacher_id = session.get("teacher_id")
+    is_admin = teacher_is_admin(teacher_id)
+    is_director = teacher_is_director(teacher_id)
+    is_secretary = teacher_is_secretary(teacher_id)
+    is_guide = is_guide_teacher(teacher_id)
+    if not (is_admin or is_director or is_secretary or is_guide):
+        flash("No tienes permiso para consultar el módulo de matrículas.", "error")
+        return redirect(url_for("index"))
+    with db() as connection:
+        if is_admin or is_director or is_secretary:
+            group_rows = connection.execute("""
+                SELECT g.*, t.name AS guide_name,
+                       COUNT(DISTINCT CASE WHEN s.enrollment_status='active' THEN s.id END) AS active_students,
+                       COUNT(DISTINCT CASE WHEN s.enrollment_status='withdrawn' THEN s.id END) AS withdrawn_students
+                FROM groups g LEFT JOIN teachers t ON t.id=g.teacher_id
+                LEFT JOIN students s ON s.group_id=g.id
+                GROUP BY g.id ORDER BY g.academic_year DESC, g.name
+            """).fetchall()
+            student_scope = "WHERE 1=1"
+            student_params = ()
+        else:
+            group_rows = connection.execute("""
+                SELECT g.*, t.name AS guide_name,
+                       COUNT(DISTINCT CASE WHEN s.enrollment_status='active' THEN s.id END) AS active_students,
+                       COUNT(DISTINCT CASE WHEN s.enrollment_status='withdrawn' THEN s.id END) AS withdrawn_students
+                FROM groups g LEFT JOIN teachers t ON t.id=g.teacher_id
+                LEFT JOIN students s ON s.group_id=g.id
+                WHERE g.teacher_id=? GROUP BY g.id ORDER BY g.academic_year DESC, g.name
+            """, (teacher_id,)).fetchall()
+            student_scope = "WHERE g.teacher_id=?"
+            student_params = (teacher_id,)
+        recent_students = connection.execute(f"""
+            SELECT s.id,s.code,s.name,s.section,s.enrollment_status,g.name AS group_name,
+                   s.created_at, COUNT(DISTINCT sc.class_id) AS class_count
+            FROM students s LEFT JOIN groups g ON g.id=s.group_id
+            LEFT JOIN student_classes sc ON sc.student_id=s.id
+            {student_scope}
+            GROUP BY s.id ORDER BY s.created_at DESC, s.name LIMIT 12
+        """, student_params).fetchall()
+        active_count = connection.execute(f"SELECT COUNT(*) AS n FROM students s LEFT JOIN groups g ON g.id=s.group_id {student_scope} AND s.enrollment_status='active'", student_params).fetchone()["n"]
+        withdrawn_count = connection.execute(f"SELECT COUNT(*) AS n FROM students s LEFT JOIN groups g ON g.id=s.group_id {student_scope} AND s.enrollment_status='withdrawn'", student_params).fetchone()["n"]
+    return render_template("enrollment.html", groups=group_rows, recent_students=recent_students,
+                           active_count=active_count, withdrawn_count=withdrawn_count,
+                           is_admin=is_admin, is_director=is_director, is_secretary=is_secretary,
+                           is_guide=is_guide, can_manage=is_admin or is_director or is_guide)
+
+
 @app.route("/students", methods=["GET", "POST"])
 @teacher_required
 @workflow_required(3)
@@ -2924,6 +2981,54 @@ def export_xlsx():
         values += [item for i in range(1, 7) for item in (row[f"work{i}"], row[f"work{i}_date"] or "")]
         values += [accumulated_value(row), row["exam"], row["exam_date"] or "", row["recovery_type"] or "", row["recovery_score"] or 0, row["recovery_date"] or "", row["status"] or "En proceso", row["attendance"] or 0, row["comments"] or ""]
         grades_sheet.append(values)
+
+    # Exportar también las tablas nuevas del expediente. Antes solo se
+    # incluían estudiantes y partial_grades, por lo que asistencia, conducta
+    # y matrícula por asignatura quedaban fuera del respaldo Excel.
+    with db() as connection:
+        extra_queries = {
+            "Asistencia": ("""
+                SELECT s.code AS codigo, s.name AS estudiante, g.name AS grupo,
+                       ar.partial AS parcial, ar.attendance_date AS fecha,
+                       ar.status AS estado, ar.observation AS observacion,
+                       t.name AS registrado_por
+                FROM attendance_records ar
+                JOIN students s ON s.id=ar.student_id
+                LEFT JOIN groups g ON g.id=ar.group_id
+                LEFT JOIN teachers t ON t.id=ar.recorded_by
+                {scope} ORDER BY s.name, ar.attendance_date, ar.partial
+            """, "attendance"),
+            "Conducta": ("""
+                SELECT s.code AS codigo, s.name AS estudiante, g.name AS grupo,
+                       ce.partial AS parcial, ce.quantitative AS cuantitativa,
+                       ce.qualitative AS cualitativa, ce.criteria AS criterios,
+                       ce.incidents AS incidentes, ce.observations AS observaciones,
+                       ce.evaluation_date AS fecha
+                FROM conduct_evaluations ce
+                JOIN students s ON s.id=ce.student_id
+                LEFT JOIN groups g ON g.id=s.group_id
+                {scope} ORDER BY s.name, ce.partial
+            """, "conduct"),
+            "Matrículas": ("""
+                SELECT s.code AS codigo, s.name AS estudiante, g.name AS grupo,
+                       c.name AS clase, sub.name AS materia, c.section AS seccion,
+                       t.name AS docente
+                FROM student_classes sc
+                JOIN students s ON s.id=sc.student_id
+                JOIN classes c ON c.id=sc.class_id
+                JOIN subjects sub ON sub.id=c.subject_id
+                LEFT JOIN groups g ON g.id=s.group_id
+                LEFT JOIN teachers t ON t.id=c.teacher_id
+                {scope} ORDER BY s.name, sub.name
+            """, "enrollment"),
+        }
+        for title, (query, _) in extra_queries.items():
+            sheet = workbook.create_sheet(title)
+            rows = connection.execute(query.format(scope=scope), params).fetchall()
+            if rows:
+                sheet.append(list(rows[0].keys()))
+                for row in rows:
+                    sheet.append([row[key] for key in row.keys()])
     config_sheet = workbook.create_sheet("Configuración")
     current = settings()
     config_sheet.append(["Campo", "Valor"])
@@ -2946,6 +3051,29 @@ def export_xlsx():
                     sheet.append(list(rows[0].keys()))
                     for row in rows:
                         sheet.append([row[key] for key in row.keys()])
+        # Respaldo completo para Admin: incluir también tablas que no tienen
+        # una hoja visible propia, evitando que una exportación omita datos
+        # introducidos por módulos nuevos.
+        represented_tables = {
+            "students", "partial_grades", "attendance_records",
+            "conduct_evaluations", "student_classes", "teacher_settings",
+            "teachers", "groups", "subjects", "classes", "grade_audit",
+            "settings",
+        }
+        all_tables = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        ).fetchall()
+        for table_row in all_tables:
+            table_name = table_row["name"]
+            if table_name in represented_tables:
+                continue
+            sheet = workbook.create_sheet(f"BD_{table_name}"[:31])
+            rows = connection.execute(f'SELECT * FROM "{table_name}"').fetchall()
+            if rows:
+                sheet.append(list(rows[0].keys()))
+                for row in rows:
+                    sheet.append([row[key] for key in row.keys()])
     for sheet in workbook.worksheets:
         sheet.freeze_panes = "A2"
         for column in sheet.columns:
@@ -3497,10 +3625,13 @@ def teacher_selected_pdf():
 def grade_sheet_data(teacher_id, group_id=None, class_ids=None):
     """Return the teacher's classes, students and four-partial grade matrix."""
     with db() as connection:
-        class_params = [teacher_id, teacher_id]
+        can_view_all = (teacher_is_admin(teacher_id) or teacher_is_director(teacher_id)
+                        or teacher_is_secretary(teacher_id))
+        class_params = [] if can_view_all else [teacher_id, teacher_id]
+        class_scope = "" if can_view_all else "WHERE (c.teacher_id=? OR c.group_id IN (SELECT id FROM groups WHERE teacher_id=?))"
         class_sql = """SELECT c.id,c.name,c.subject_id,s.name AS subject_name
             FROM classes c JOIN subjects s ON s.id=c.subject_id
-            WHERE (c.teacher_id=? OR c.group_id IN (SELECT id FROM groups WHERE teacher_id=?))"""
+            {class_scope}""".format(class_scope=class_scope)
         if group_id:
             class_sql += " AND c.group_id=?"; class_params.append(group_id)
         if class_ids:
@@ -3548,7 +3679,10 @@ def grade_sheet():
     teacher_id = session.get("teacher_id")
     group_id = request.args.get("group_id", type=int)
     with db() as connection:
-        groups = connection.execute("SELECT DISTINCT g.id,g.name FROM groups g JOIN classes c ON c.group_id=g.id WHERE c.teacher_id=? ORDER BY g.name", (teacher_id,)).fetchall()
+        if teacher_is_admin(teacher_id) or teacher_is_director(teacher_id) or teacher_is_secretary(teacher_id):
+            groups = connection.execute("SELECT DISTINCT g.id,g.name FROM groups g JOIN classes c ON c.group_id=g.id ORDER BY g.name").fetchall()
+        else:
+            groups = connection.execute("SELECT DISTINCT g.id,g.name FROM groups g JOIN classes c ON c.group_id=g.id WHERE c.teacher_id=? OR g.teacher_id=? ORDER BY g.name", (teacher_id, teacher_id)).fetchall()
         group_info = connection.execute("SELECT name,grade,section,academic_year FROM groups WHERE id=?", (group_id,)).fetchone() if group_id else None
         teacher_info = connection.execute("SELECT name,academic_year FROM teachers WHERE id=?", (teacher_id,)).fetchone()
     classes, students = grade_sheet_data(teacher_id, group_id)
@@ -4074,6 +4208,21 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ]))
             tutor_signatures.hAlign = "CENTER"
+            panel_content_width = available_width / 2 - 32
+            tutor_width = 3.48 * inch
+            tutor_side = max((panel_content_width - tutor_width) / 2, 0)
+            tutor_signatures_block = Table(
+                [[None, tutor_signatures, None]],
+                colWidths=[tutor_side, tutor_width, tutor_side],
+                style=TableStyle([
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]),
+            )
+            tutor_signatures_block.hAlign = "CENTER"
             identity = panel([
                 Paragraph("BOLETA ESCOLAR", panel_title),
                 Paragraph("INFORMACIÓN GENERAL", panel_center_title),
@@ -4086,7 +4235,7 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                 Paragraph("Municipio: NR · Nº de matrícula: " + str(student['code']), panel_style),
                 Paragraph(f"Año lectivo: {student['group_year'] or datetime.now().year} · Corte: {partials_label}", panel_style),
                 Spacer(1, 10), Paragraph("FIRMAS DEL DOCENTE GUÍA POR CORTE", panel_title),
-                tutor_signatures,
+                tutor_signatures_block,
                 Spacer(1, 12), Paragraph("Parciales incluidos", panel_title),
                 Paragraph(partials_label, panel_style), Spacer(1, 12),
                 Paragraph("Resultado global", panel_title), Paragraph(f"{selected_total:.0f} / {maximum_total:.0f}", panel_style),
@@ -4112,7 +4261,21 @@ def make_pdf(student_ids, selected_partials, selected_class_ids=None, conduct_op
                 ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]))
             scale_table.hAlign = "CENTER"
-            cover[9:9] = [Spacer(1, 10), Paragraph("ESCALAS Y EQUIVALENCIAS", panel_title), scale_table]
+            scale_width = 3.6 * inch
+            scale_side = max((panel_content_width - scale_width) / 2, 0)
+            scale_table_block = Table(
+                [[None, scale_table, None]],
+                colWidths=[scale_side, scale_width, scale_side],
+                style=TableStyle([
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]),
+            )
+            scale_table_block.hAlign = "CENTER"
+            cover[9:9] = [Spacer(1, 10), Paragraph("ESCALAS Y EQUIVALENCIAS", panel_title), scale_table_block]
             notes = panel([
                 Paragraph("OBSERVACIONES Y CIERRE", panel_title),
                 Paragraph(f"Criterios evaluativos: {current['evaluation_criteria'] or 'No registrados'}", panel_style),
