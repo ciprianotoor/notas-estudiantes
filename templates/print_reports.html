@@ -50,6 +50,12 @@
       <label><input type="checkbox" name="conduct_field" value="incidents" checked> Incidentes registrados</label>
       <label><input type="checkbox" name="conduct_field" value="observations" checked> Observaciones</label>
     </div>
+    <h2>Formato de impresión</h2>
+    <div class="selection-list">
+      <label><input type="radio" name="format" value="standard" checked> Boleta actual</label>
+      <label><input type="radio" name="format" value="final"> Boleta de 4 caras A4 plegable</label>
+    </div>
+    <p class="muted">Para la boleta de 4 caras: imprimir a doble cara, voltear por el borde corto y doblar la hoja a la mitad.</p>
     <h2>Estudiantes ({{ students|length }})</h2>
     {% if students %}
     <table>

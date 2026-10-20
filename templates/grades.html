@@ -4,7 +4,8 @@
 <div class="card"><h2>Resumen del estudiante</h2><div class="summary-grid"><div><span>Total de los cuatro parciales</span><strong>{{ '%.2f'|format(final) }} / 400</strong></div><div><span>Nota final del año</span><strong class="final-score">{{ '%.2f'|format(final / 4) }} / 100</strong></div></div><p class="muted">El promedio se calcula como (Parcial I + Parcial II + Parcial III + Parcial IV) / 4. La recuperación sustituye únicamente el examen cuando el acumulado es mayor de 50.</p></div>
 <div class="card"><h2>Materia</h2><form method="get" class="grid"><label>Seleccionar materia<select name="subject_id" onchange="this.form.submit()">{% for subj in subjects %}<option value="{{ subj.id }}" {% if subj.id == current_subject_id %}selected{% endif %}>{{ subj.name }} - {{ subj.grade }} {{ subj.year }}</option>{% endfor %}</select></label></form></div>
 <div class="card"><h2>Parciales</h2><p class="muted">Cada tarjeta cerrada muestra solo el total. Pulsa sobre un parcial para registrar o modificar sus detalles.</p></div>
-{% if is_conduct %}<div class="card conduct-subject-card"><h2>Conducta - evaluación completa por parcial</h2><p class="muted">Registra cuantitativa, cualitativa, criterios, incidentes y observaciones para cada corte.</p>{% for p in range(1,5) %}{% set conduct=conduct_evaluations.get(p) %}<form method="post" class="card"><input type="hidden" name="partial" value="{{ p }}"><input type="hidden" name="subject_id" value="{{ current_subject_id }}"><h3>{{ partial_name(p) }}</h3><div class="summary-grid"><label>Cuantitativa (0-100)<input name="conduct_score" type="number" min="0" max="100" step="0.01" value="{{ conduct.quantitative if conduct else '' }}" required></label><label>Cualitativa (automática)<select name="conduct_qualitative" disabled><option>{{ conduct.qualitative if conduct else 'Se calcula al escribir la nota' }}</option></select></label></div><label>Criterios utilizados<textarea name="conduct_criteria">{{ conduct.criteria if conduct else '' }}</textarea></label><label>Incidentes registrados<textarea name="conduct_incidents">{{ conduct.incidents if conduct else '' }}</textarea></label><label>Observaciones<textarea name="conduct_observations">{{ conduct.observations if conduct else '' }}</textarea></label><button class="save-button" type="submit">Guardar {{ partial_name(p) }}</button></form>{% endfor %}</div>{% endif %}
+{% if is_conduct %}<p><a class="button secondary" href="{{ url_for('conduct_report_options', student_id=student.id) }}">Generar reporte de Conducta para firma</a></p>{% endif %}
+{% if is_conduct %}<div class="card conduct-subject-card"><h2>Conducta - evaluación por dimensiones</h2><p class="muted">Cada dimensión vale 10%. La asistencia se toma automáticamente del parcial correspondiente.</p>{% for p in range(1,5) %}{% set conduct=conduct_evaluations.get(p) %}<form method="post" class="card"><input type="hidden" name="partial" value="{{ p }}"><input type="hidden" name="subject_id" value="{{ current_subject_id }}"><h3>{{ partial_name(p) }}</h3><div class="summary-grid"><label>Asistencia (10%)<input value="Calculada desde asistencia" disabled></label><label>Nota final de Conducta (0-100)<input value="{{ conduct.quantitative if conduct else 'Se calcula al guardar' }}" disabled></label></div><div class="summary-grid">{% for key,label in [('responsibility','Responsabilidad'),('discipline','Disciplina'),('respect','Respeto'),('punctuality','Puntualidad'),('participation','Participación'),('order','Orden y aseo'),('solidarity','Solidaridad'),('teamwork','Trabajo en equipo'),('tasks','Cumplimiento de tareas')] %}<label>{{ label }} (10%)<input name="conduct_{{ key }}" type="number" min="0" max="100" step="0.01" value="0" required></label>{% endfor %}</div><label>Criterios utilizados<textarea name="conduct_criteria">{{ conduct.criteria if conduct else '' }}</textarea></label><label>Incidentes registrados<textarea name="conduct_incidents">{{ conduct.incidents if conduct else '' }}</textarea></label><label>Observaciones<textarea name="conduct_observations">{{ conduct.observations if conduct else '' }}</textarea></label><button class="save-button" type="submit">Guardar {{ partial_name(p) }}</button></form>{% endfor %}</div>{% endif %}
 {% if not is_conduct %}<div class="partial-workspace"><div class="partial-toolbar"><div><strong>Registro de parciales</strong><small>Abre o contrae cada bloque según necesites.</small></div><div class="partial-tools"><button type="button" class="secondary" data-partials-open>Ver todos</button><button type="button" class="secondary" data-partials-close>Ocultar todos</button><button type="button" class="secondary" data-partials-toggle>Alternar</button></div></div><div class="partials-grid">
 {% for p in range(1,5) %}{% set row=partials.get(p) %}
 <details class="partial-card">
@@ -109,4 +110,53 @@ document.querySelectorAll('.conduct-subject-card > form').forEach(function(form)
   document.querySelector('.conduct-subject-card').appendChild(details);
 });
 </script>
+{% if is_conduct %}<script>
+var attendanceByPartial = [{% for p in range(1,5) %}{{ attendance_percent.get(p, 0) }}{% if not loop.last %},{% endif %}{% endfor %}];
+var savedDimensions = {};
+var evaluationDates = {};
+{% for p in range(1,5) %}{% set saved = conduct_evaluations.get(p) %}savedDimensions[{{ p }}] = {{ (saved.dimensions if saved and saved.dimensions else {})|tojson }};evaluationDates[{{ p }}] = {{ (saved.evaluation_date if saved and saved.evaluation_date else '')|tojson }};{% endfor %}
+document.querySelectorAll('.conduct-subject-card form').forEach(function(form, index) {
+  var field = form.querySelector('input[disabled]');
+  var finalField = form.querySelectorAll('input[disabled]')[1];
+  var attendance = attendanceByPartial[index] || 0;
+  if (field) field.value = attendance + '%';
+  var dateLabel = document.createElement('label');
+  dateLabel.textContent = 'Fecha de evaluación';
+  var dateInput = document.createElement('input');
+  dateInput.type = 'date'; dateInput.name = 'conduct_date'; dateInput.value = evaluationDates[index + 1] || '';
+  dateLabel.appendChild(dateInput);
+  var summary = form.querySelector('.summary-grid');
+  if (summary) summary.insertBefore(dateLabel, summary.firstChild);
+  var dimensions = savedDimensions[index + 1] || {};
+  form.querySelectorAll('input[name^="conduct_"]').forEach(function(input) {
+    var key = input.name.replace('conduct_', '');
+    input.max = 10;
+    if (Object.prototype.hasOwnProperty.call(dimensions, key)) input.value = dimensions[key];
+  });
+  function calculateConduct() {
+    var total = attendance * 0.1;
+    form.querySelectorAll('input[name^="conduct_"]').forEach(function(input) {
+      total += Math.min(10, Math.max(0, Number(input.value || 0)));
+    });
+    if (finalField) finalField.value = Math.round(total);
+  }
+  form.querySelectorAll('input[name^="conduct_"]').forEach(function(input) {
+    input.addEventListener('input', calculateConduct);
+  });
+  calculateConduct();
+});
+</script>{% endif %}
+{% if not is_conduct %}<script>
+var suggestionsByPartial = {};
+{% for p in range(1,5) %}{% set saved_row = partials.get(p) %}suggestionsByPartial[{{ p }}] = {{ (saved_row.suggestions if saved_row else '')|tojson }};{% endfor %}
+document.querySelectorAll('.partial-card form[method="post"]').forEach(function(form) {
+  if (form.querySelector('textarea[name="suggestions"]')) return;
+  var label = document.createElement('label'); label.textContent = 'Sugerencias de mejora';
+  var area = document.createElement('textarea'); area.name = 'suggestions'; area.placeholder = 'Indica qué debe mejorar el estudiante en este parcial y materia.';
+  var partial = form.querySelector('input[name="partial"]'); area.value = suggestionsByPartial[partial ? partial.value : 1] || '';
+  label.appendChild(area);
+  var comments = form.querySelector('textarea[name="comments"]');
+  if (comments && comments.parentElement) comments.parentElement.insertAdjacentElement('afterend', label);
+});
+</script>{% endif %}
 {% endblock %}

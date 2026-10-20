@@ -1,9 +1,10 @@
 import io
 import csv
+import json
 import os
 import shutil
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, flash, make_response, redirect, render_template, request, send_file, session, url_for
 from openpyxl import Workbook, load_workbook
@@ -174,6 +175,19 @@ def init_db():
             criteria TEXT DEFAULT '', incidents TEXT DEFAULT '', observations TEXT DEFAULT '',
             UNIQUE(student_id, partial), FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS attendance_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL,
+            student_id INTEGER NOT NULL,
+            attendance_date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'P' CHECK(status IN ('P','A','J','NJ')),
+            observation TEXT DEFAULT '',
+            recorded_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(student_id, attendance_date, partial),
+            FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
+            FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+        );
         """)
         # Older resets did not remove conduct rows before resetting student IDs.
         # Discard those orphaned rows so a newly created student cannot inherit them.
@@ -195,7 +209,34 @@ def init_db():
         ):
             if column not in columns:
                 connection.execute(f"ALTER TABLE students ADD COLUMN {column} {definition}")
+        attendance_columns = {row["name"] for row in connection.execute("PRAGMA table_info(attendance_records)")}
+        if "partial" not in attendance_columns:
+            connection.execute("ALTER TABLE attendance_records ADD COLUMN partial INTEGER NOT NULL DEFAULT 1 CHECK(partial BETWEEN 1 AND 4)")
+        attendance_indexes = connection.execute("PRAGMA index_list(attendance_records)").fetchall()
+        for index in attendance_indexes:
+            if index["unique"]:
+                index_columns = [row["name"] for row in connection.execute(f"PRAGMA index_info({index['name']})").fetchall()]
+                if index_columns == ["student_id", "attendance_date"]:
+                    connection.execute("ALTER TABLE attendance_records RENAME TO attendance_records_old")
+                    connection.execute("""CREATE TABLE attendance_records (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT, group_id INTEGER NOT NULL,
+                        student_id INTEGER NOT NULL, attendance_date TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'P' CHECK(status IN ('P','A','J','NJ')),
+                        observation TEXT DEFAULT '', recorded_by INTEGER,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP, partial INTEGER NOT NULL DEFAULT 1 CHECK(partial BETWEEN 1 AND 4),
+                        UNIQUE(student_id, attendance_date, partial),
+                        FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE,
+                        FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+                    )""")
+                    connection.execute("""INSERT INTO attendance_records
+                        (id,group_id,student_id,attendance_date,status,observation,recorded_by,created_at,partial)
+                        SELECT id,group_id,student_id,attendance_date,status,observation,recorded_by,created_at,partial
+                        FROM attendance_records_old""")
+                    connection.execute("DROP TABLE attendance_records_old")
+                    break
         grade_columns = {row["name"] for row in connection.execute("PRAGMA table_info(partial_grades)")}
+        if "suggestions" not in grade_columns:
+            connection.execute("ALTER TABLE partial_grades ADD COLUMN suggestions TEXT DEFAULT ''")
         for column in ("work5", "work6"):
             if column not in grade_columns:
                 connection.execute(f"ALTER TABLE partial_grades ADD COLUMN {column} REAL DEFAULT 0")
@@ -278,6 +319,11 @@ def init_db():
         for column, definition in (("conduct_score", "REAL DEFAULT NULL"), ("conduct_criteria", "TEXT DEFAULT ''"), ("conduct_incidents", "TEXT DEFAULT ''")):
             if column not in student_columns:
                 connection.execute(f"ALTER TABLE students ADD COLUMN {column} {definition}")
+        conduct_columns = {row["name"] for row in connection.execute("PRAGMA table_info(conduct_evaluations)")}
+        if "dimensions" not in conduct_columns:
+            connection.execute("ALTER TABLE conduct_evaluations ADD COLUMN dimensions TEXT NOT NULL DEFAULT '{}'")
+        if "evaluation_date" not in conduct_columns:
+            connection.execute("ALTER TABLE conduct_evaluations ADD COLUMN evaluation_date TEXT NOT NULL DEFAULT ''")
         # If `groups` was created with a global UNIQUE(name) constraint (legacy),
         # recreate it so uniqueness is per-teacher: UNIQUE(teacher_id, name).
         row = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='groups'").fetchone()
@@ -1196,6 +1242,94 @@ def login():
 @teacher_required
 def help_view():
     return render_template("help.html")
+
+
+@app.route("/attendance", methods=["GET", "POST"])
+@teacher_required
+def attendance():
+    teacher_id = session.get("teacher_id")
+    if not (teacher_is_admin(teacher_id) or is_guide_teacher(teacher_id)):
+        flash("Este módulo está disponible únicamente para docentes guía.", "error")
+        return redirect(url_for("index"))
+    allowed_ids = None if teacher_is_admin(teacher_id) else teacher_scope_group_ids(teacher_id)
+    selected_start = request.values.get("start_date", datetime.now().strftime("%Y-%m-%d"))
+    selected_partial = request.values.get("partial", 1, type=int)
+    if selected_partial not in (1, 2, 3, 4):
+        selected_partial = 1
+    try:
+        cursor = datetime.strptime(selected_start, "%Y-%m-%d").date()
+    except ValueError:
+        cursor = datetime.now().date()
+        selected_start = cursor.strftime("%Y-%m-%d")
+    days = []
+    while len(days) < 40:
+        if cursor.weekday() < 5:
+            days.append(cursor)
+        cursor += timedelta(days=1)
+    date_values = [day.strftime("%Y-%m-%d") for day in days]
+    selected_group = request.values.get("group_id", type=int)
+    with db() as connection:
+        groups_sql = "SELECT id,name,grade,section FROM groups"
+        params = []
+        if allowed_ids is not None:
+            if not allowed_ids:
+                groups = []
+            else:
+                groups = connection.execute(groups_sql + " WHERE id IN (%s) ORDER BY name" % ",".join("?" * len(allowed_ids)), allowed_ids).fetchall()
+        else:
+            groups = connection.execute(groups_sql + " ORDER BY name").fetchall()
+        if selected_group not in {g["id"] for g in groups}:
+            selected_group = groups[0]["id"] if groups else None
+        if request.method == "POST" and selected_group:
+            for field, status in request.form.items():
+                if not field.startswith("attendance_"):
+                    continue
+                _, sid_text, attendance_date = field.split("_", 2)
+                sid = int(sid_text)
+                if status not in {"P", "A", "J", "NJ"}:
+                    continue
+                connection.execute("""INSERT INTO attendance_records
+                    (group_id,student_id,attendance_date,status,recorded_by,partial)
+                    VALUES(?,?,?,?,?,?)
+                    ON CONFLICT(student_id,attendance_date,partial) DO UPDATE SET
+                    group_id=excluded.group_id,status=excluded.status,recorded_by=excluded.recorded_by,partial=excluded.partial""",
+                    (selected_group, sid, attendance_date, status, teacher_id, selected_partial))
+            # Keep the existing attendance field in the grade partials synchronized
+            # with the guide's 40-day attendance record for this group/partial.
+            active_ids = connection.execute(
+                "SELECT id FROM students WHERE group_id=? AND enrollment_status='active'",
+                (selected_group,),
+            ).fetchall()
+            for student in active_ids:
+                present = connection.execute("""SELECT COUNT(*) AS total FROM attendance_records
+                    WHERE student_id=? AND group_id=? AND partial=?
+                    AND attendance_date IN (%s) AND status='P'""" % ",".join("?" * len(date_values)),
+                    [student["id"], selected_group, selected_partial] + date_values).fetchone()["total"]
+                percentage = round(present * 100 / 40, 2)
+                connection.execute(
+                    "UPDATE partial_grades SET attendance=? WHERE student_id=? AND partial=?",
+                    (percentage, student["id"], selected_partial),
+                )
+            flash("Registro de 40 días guardado como respaldo del grupo.", "success")
+        students = connection.execute("""SELECT s.id,s.code,s.name
+            FROM students s WHERE s.group_id=? AND s.enrollment_status='active' ORDER BY s.name""",
+            (selected_group or 0,)).fetchall()
+        records = connection.execute("""SELECT student_id,attendance_date,status
+            FROM attendance_records WHERE group_id=? AND partial=? AND attendance_date IN (%s)""" % ",".join("?" * len(date_values)),
+            [selected_group or 0, selected_partial] + date_values).fetchall()
+    record_map = {(row["student_id"], row["attendance_date"]): row["status"] for row in records}
+    student_rows = []
+    for student in students:
+        statuses = [record_map.get((student["id"], value), "") for value in date_values]
+        counts = {code: statuses.count(code) for code in ("P", "A", "J", "NJ")}
+        student_rows.append({**dict(student), "statuses": statuses, "counts": counts,
+                             "score": round(counts["P"] * 10 / 40, 2)})
+    daily_totals = [{code: sum(1 for student in student_rows if student["statuses"][index] == code)
+                     for code in ("P", "A", "J", "NJ")} for index in range(40)]
+    return render_template("attendance.html", groups=groups, students=students,
+                           student_rows=student_rows, days=days, date_values=date_values,
+                           daily_totals=daily_totals, selected_group=selected_group,
+                           selected_start=selected_start, selected_partial=selected_partial)
 
 
 @app.post("/login")
@@ -2118,8 +2252,16 @@ def grades(student_id):
         with db() as connection:
             selected_subject = connection.execute("SELECT name FROM subjects WHERE id=?", (subject_id,)).fetchone()
         if selected_subject and selected_subject["name"].strip().lower() == "conducta":
+            dimension_keys = ("attendance", "responsibility", "discipline", "respect", "punctuality", "participation", "order", "solidarity", "teamwork", "tasks")
+            dimensions = {}
+            with db() as connection:
+                attendance_row = connection.execute("SELECT COUNT(*) AS present FROM attendance_records WHERE student_id=? AND partial=? AND status='P'", (student_id, partial)).fetchone()
             try:
-                conduct_score = float(request.form.get("conduct_score", ""))
+                dimensions["attendance"] = (attendance_row["present"] * 100 / 40) if attendance_row else 0
+                for key in dimension_keys[1:]:
+                    dimensions[key] = min(10, max(0, float(request.form.get(f"conduct_{key}", "0") or 0)))
+                dimensions = {key: round(value) for key, value in dimensions.items()}
+                conduct_score = round(dimensions["attendance"] * 0.1 + sum(dimensions[key] for key in dimension_keys[1:]))
             except (TypeError, ValueError):
                 conduct_score = None
             conduct_qualitative = qualitative_learning_label(conduct_score) if conduct_score is not None and 0 <= conduct_score <= 100 else ""
@@ -2127,10 +2269,10 @@ def grades(student_id):
                 flash("La calificación cuantitativa de conducta debe estar entre 0 y 100.", "error")
             else:
                 with db() as connection:
-                    connection.execute("""INSERT INTO conduct_evaluations(student_id,partial,quantitative,qualitative,criteria,incidents,observations)
-                        VALUES(?,?,?,?,?,?,?) ON CONFLICT(student_id,partial) DO UPDATE SET quantitative=excluded.quantitative,
-                        qualitative=excluded.qualitative,criteria=excluded.criteria,incidents=excluded.incidents,observations=excluded.observations""",
-                        (student_id, partial, conduct_score, conduct_qualitative, request.form.get("conduct_criteria", "").strip(), request.form.get("conduct_incidents", "").strip(), request.form.get("conduct_observations", "").strip()))
+                    connection.execute("""INSERT INTO conduct_evaluations(student_id,partial,quantitative,qualitative,criteria,incidents,observations,dimensions,evaluation_date)
+                        VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(student_id,partial) DO UPDATE SET quantitative=excluded.quantitative,
+                        qualitative=excluded.qualitative,criteria=excluded.criteria,incidents=excluded.incidents,observations=excluded.observations,dimensions=excluded.dimensions,evaluation_date=excluded.evaluation_date""",
+                        (student_id, partial, conduct_score, conduct_qualitative, request.form.get("conduct_criteria", "").strip(), request.form.get("conduct_incidents", "").strip(), request.form.get("conduct_observations", "").strip(), json.dumps(dimensions), request.form.get("conduct_date", "").strip()))
                 flash(f"{partial_name(partial)} de conducta guardado.", "success")
             return redirect(url_for("grades", student_id=student_id, subject_id=subject_id))
         try:
@@ -2160,22 +2302,23 @@ def grades(student_id):
         recovery_date = request.form.get("recovery_date", "").strip()
         status = request.form.get("status", "En proceso").strip()
         comments = request.form.get("comments", "").strip()
+        suggestions = request.form.get("suggestions", "").strip()
         if any(value < 0 or value > work_max for value in values) or exam < 0 or exam > exam_max or recovery_score < 0 or recovery_score > 40 or attendance < 0 or attendance > 100 or status not in ("En proceso", "Entregado", "Cerrado"):
             flash(f"Cada trabajo debe estar entre 0 y {work_max:g}; el examen, entre 0 y {exam_max:g}.", "error")
         elif recovery_type and sum(values) <= 50:
             flash("El rescate o extraordinario requiere un acumulado mayor de 50 puntos.", "error")
         else:
             with db() as connection:
-                connection.execute("""INSERT INTO partial_grades(student_id,partial,subject_id,teacher_id,work1,work2,work3,work4,work5,work6,exam,exam_date,recovery_type,recovery_score,recovery_date,status,attendance,comments,
+                connection.execute("""INSERT INTO partial_grades(student_id,partial,subject_id,teacher_id,work1,work2,work3,work4,work5,work6,exam,exam_date,recovery_type,recovery_score,recovery_date,status,attendance,comments,suggestions,
                     work1_date,work2_date,work3_date,work4_date,work5_date,work6_date)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(student_id,partial,subject_id) DO UPDATE SET work1=excluded.work1,
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(student_id,partial,subject_id) DO UPDATE SET work1=excluded.work1,
                     work2=excluded.work2,work3=excluded.work3,work4=excluded.work4,work5=excluded.work5,
                     work6=excluded.work6,exam=excluded.exam,exam_date=excluded.exam_date,recovery_type=excluded.recovery_type,recovery_score=excluded.recovery_score,recovery_date=excluded.recovery_date,
-                    status=excluded.status,attendance=excluded.attendance,comments=excluded.comments,
+                    status=excluded.status,attendance=excluded.attendance,comments=excluded.comments,suggestions=excluded.suggestions,
                     work1_date=excluded.work1_date,work2_date=excluded.work2_date,
                     work3_date=excluded.work3_date,work4_date=excluded.work4_date,work5_date=excluded.work5_date,
                     work6_date=excluded.work6_date""",
-                    (student_id, partial, subject_id, teacher_id, *values, exam, exam_date, recovery_type, recovery_score, recovery_date, status, attendance, comments, *dates))
+                    (student_id, partial, subject_id, teacher_id, *values, exam, exam_date, recovery_type, recovery_score, recovery_date, status, attendance, comments, suggestions, *dates))
                 audit_details = f"Nota parcial {grade_value({'work1': values[0], 'work2': values[1], 'work3': values[2], 'work4': values[3], 'work5': values[4], 'work6': values[5], 'exam': exam})} (subject_id={subject_id})"
                 if teacher_is_admin(teacher_id):
                     audit_details += f" · Motivo admin: {change_reason}"
@@ -2187,15 +2330,26 @@ def grades(student_id):
             return redirect(url_for("grades", student_id=student_id, subject_id=subject_id))
     partials, final = subject_summary(student_id, selected_subject_id)
     with db() as connection:
-        conduct_evaluations = {row["partial"]: row for row in connection.execute(
-            "SELECT * FROM conduct_evaluations WHERE student_id=? ORDER BY partial", (student_id,)).fetchall()}
+        conduct_evaluations = {}
+        for row in connection.execute("SELECT * FROM conduct_evaluations WHERE student_id=? ORDER BY partial", (student_id,)).fetchall():
+            item = dict(row)
+            try:
+                item["dimensions"] = json.loads(item.get("dimensions") or "{}")
+            except (TypeError, ValueError):
+                item["dimensions"] = {}
+            conduct_evaluations[row["partial"]] = item
         history = connection.execute("""
             SELECT ga.*, t.name AS actor_name
             FROM grade_audit ga LEFT JOIN teachers t ON t.id=ga.actor_teacher_id
             WHERE ga.student_id=? ORDER BY ga.created_at DESC, ga.id DESC LIMIT 30
         """, (student_id,)).fetchall()
     selected_subject_name = next((row["name"] for row in subjects if row["id"] == selected_subject_id), "")
-    return render_template("grades.html", student=student, partials=partials, final=final, conduct_evaluations=conduct_evaluations, history=history, subjects=subjects, current_subject_id=selected_subject_id, selected_subject_name=selected_subject_name, is_conduct=selected_subject_name.strip().lower() == "conducta", is_guide=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), is_director=teacher_is_director(teacher_id), is_secretary=teacher_is_secretary(teacher_id), can_edit_grades=can_edit_grades)
+    attendance_percent = {}
+    with db() as connection:
+        for p in range(1, 5):
+            row = connection.execute("SELECT COUNT(*) AS present FROM attendance_records WHERE student_id=? AND partial=? AND status='P'", (student_id, p)).fetchone()
+            attendance_percent[p] = round((row["present"] * 100 / 40) if row else 0)
+    return render_template("grades.html", student=student, partials=partials, final=final, conduct_evaluations=conduct_evaluations, attendance_percent=attendance_percent, history=history, subjects=subjects, current_subject_id=selected_subject_id, selected_subject_name=selected_subject_name, is_conduct=selected_subject_name.strip().lower() == "conducta", is_guide=is_guide_teacher(teacher_id), is_admin=teacher_is_admin(teacher_id), is_director=teacher_is_director(teacher_id), is_secretary=teacher_is_secretary(teacher_id), can_edit_grades=can_edit_grades)
 
 
 @app.post("/students/<int:student_id>/profile")
@@ -3181,6 +3335,73 @@ def teacher_pdf(student_id):
         student=student,
         class_options=class_options,
     )
+
+
+@app.get("/students/<int:student_id>/conduct-report.pdf")
+@report_access_required
+def conduct_report_pdf(student_id):
+    if not teacher_can_access_student(student_id):
+        return "Estudiante no encontrado", 404
+    selected_partials = [int(value) for value in request.args.getlist("partial") if value.isdigit() and 1 <= int(value) <= 4] or [1, 2, 3, 4]
+    report_detail = request.args.get("detail", "detailed")
+    with db() as connection:
+        student = connection.execute("""SELECT s.name,s.code,g.name AS group_name,g.grade,g.section
+            FROM students s LEFT JOIN groups g ON g.id=s.group_id WHERE s.id=?""", (student_id,)).fetchone()
+        placeholders = ",".join("?" * len(selected_partials))
+        conduct_rows = connection.execute(f"SELECT * FROM conduct_evaluations WHERE student_id=? AND partial IN ({placeholders}) ORDER BY partial", (student_id, *selected_partials)).fetchall()
+        attendance = connection.execute("""SELECT partial,status,COUNT(*) AS total FROM attendance_records
+            WHERE student_id=? GROUP BY partial,status""", (student_id,)).fetchall()
+    if not student:
+        return "Estudiante no encontrado", 404
+    school = settings()
+    attendance_map = {}
+    for row in attendance:
+        attendance_map.setdefault(row["partial"], {})[row["status"]] = row["total"]
+    output = io.BytesIO()
+    document = SimpleDocTemplate(output, pagesize=A4, rightMargin=36, leftMargin=36, topMargin=32, bottomMargin=32)
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle("conduct_title", parent=styles["Title"], alignment=TA_CENTER, fontName=PDF_FONT_BOLD, fontSize=16)
+    small = ParagraphStyle("conduct_small", parent=styles["Normal"], fontSize=8, leading=10)
+    story = [Paragraph(escape(school.get("school_name", "Centro educativo")), title),
+             Paragraph("REPORTE INSTITUCIONAL DE SEGUIMIENTO Y EVALUACIÓN FORMATIVA", title), Spacer(1, 8),
+             Paragraph("Instrumento interno del centro educativo · No sustituye los formatos oficiales del MINED", small), Spacer(1, 8),
+             Paragraph(f"Estudiante: {escape(student['name'])} · Código: {escape(student['code'])}", styles["Normal"]),
+             Paragraph(f"Grupo: {escape(student['group_name'] or '')} · Grado: {escape(student['grade'] or '')} {escape(student['section'] or '')}", styles["Normal"]),
+             Paragraph(f"Docente guía: {escape(school.get('teacher_name', ''))} · Año lectivo: {datetime.now().year}", styles["Normal"]), Spacer(1, 12)]
+    headers = ["Parcial", "Fecha", "Asistencia", "Responsabilidad", "Disciplina", "Respeto", "Puntualidad", "Participación", "Orden", "Solidaridad", "Equipo", "Tareas", "Nota"]
+    data = [headers]
+    for row in conduct_rows:
+        try: dimensions = json.loads(row["dimensions"] or "{}")
+        except (TypeError, ValueError): dimensions = {}
+        counts = attendance_map.get(row["partial"], {})
+        attendance_pct = round(counts.get("P", 0) * 100 / 40)
+        final_score = round(attendance_pct * 0.1 + sum(dimensions.get(key, 0) for key in ("responsibility","discipline","respect","punctuality","participation","order","solidarity","teamwork","tasks")))
+        data.append([partial_name(row["partial"]), row["evaluation_date"] or "Sin fecha", f"{attendance_pct}%", *(str(dimensions.get(key, 0)) for key in ("responsibility","discipline","respect","punctuality","participation","order","solidarity","teamwork","tasks")), str(final_score)])
+    table = Table(data, repeatRows=1, colWidths=[45, 50, 45] + [42] * 10)
+    table.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), "#17365d"), ("TEXTCOLOR", (0,0), (-1,0), colors.white), ("FONTNAME", (0,0), (-1,0), PDF_FONT_BOLD), ("FONTSIZE", (0,0), (-1,-1), 6), ("GRID", (0,0), (-1,-1), .4, colors.grey), ("ALIGN", (2,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE")]))
+    story += [table, Spacer(1, 12), Paragraph("Criterios e indicadores observados", styles["Heading3"]),
+              Paragraph("Asistencia, responsabilidad, disciplina, respeto, puntualidad, participación, orden y aseo, solidaridad, trabajo en equipo y cumplimiento de tareas. La valoración debe sustentarse en evidencias observables y retroalimentación formativa.", small), Spacer(1, 8),
+              Paragraph("Observaciones e incidencias por parcial", styles["Heading3"])]
+    for row in conduct_rows if report_detail == "detailed" else []:
+        story.append(Paragraph(f"{partial_name(row['partial'])}: {escape(row['observations'] or 'Sin observaciones')} · Incidentes: {escape(row['incidents'] or 'Ninguno')}", small))
+    story += [Spacer(1, 18), Paragraph("EVIDENCIAS Y ACUERDOS DE MEJORA", styles["Heading3"]),
+              Paragraph("Registrar aquí compromisos, acompañamiento familiar y acciones de mejora acordadas.", small), Spacer(1, 24),
+              Table([["____________________________", "____________________________", "____________________________"],
+                     ["Docente guía", "Padre/madre/tutor", "Estudiante"]], colWidths=[170, 170, 170], style=TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("FONTSIZE", (0,0), (-1,-1), 8)])),
+              Spacer(1, 10), Paragraph("La evaluación se utiliza para acompañar el desarrollo integral del estudiante, orientar la mejora y documentar evidencias del proceso.", small)]
+    document.build(story)
+    output.seek(0)
+    return send_file(output, mimetype="application/pdf", as_attachment=True, download_name=f"conducta-{secure_filename(student['name'])}.pdf")
+
+
+@app.get("/students/<int:student_id>/conduct-report")
+@report_access_required
+def conduct_report_options(student_id):
+    if not teacher_can_access_student(student_id):
+        return "Estudiante no encontrado", 404
+    with db() as connection:
+        student = connection.execute("SELECT id,name,code FROM students WHERE id=?", (student_id,)).fetchone()
+    return render_template("conduct_report_options.html", student=student)
 
 
 @app.post("/reports/<int:student_id>/pdf")
