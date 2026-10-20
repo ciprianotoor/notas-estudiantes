@@ -3252,11 +3252,16 @@ def make_certificate_pdf(student_id, subject_ids, selected_partials, include_ave
             ),
             (student_id, *subject_ids, *selected_partials),
         ).fetchall()
+        conduct_subject_ids = [row["id"] for row in subjects if row["name"].strip().lower() == "conducta"]
+        conduct_rows = connection.execute("SELECT partial,quantitative FROM conduct_evaluations WHERE student_id=? AND partial IN ({})".format(",".join("?" * len(selected_partials))), (student_id, *selected_partials)).fetchall() if conduct_subject_ids else []
         current = settings()
         guide = current.get("teacher_name") or "____________________________"
     if not student:
         return "Estudiante no encontrado", 404
     grade_map = {(row["subject_id"], row["partial"]): applied_grade({**dict(row), "result": grade_value(row)}) for row in grades}
+    for subject_id in conduct_subject_ids:
+        for row in conduct_rows:
+            grade_map[(subject_id, row["partial"])] = row["quantitative"]
     styles = getSampleStyleSheet()
     title = ParagraphStyle("certificate_title", parent=styles["Title"], alignment=TA_CENTER, fontName=PDF_FONT_BOLD, fontSize=16, leading=20, spaceAfter=6)
     center = ParagraphStyle("certificate_center", parent=styles["Normal"], alignment=TA_CENTER, fontSize=10, leading=13)
