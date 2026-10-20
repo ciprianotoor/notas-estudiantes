@@ -2,6 +2,13 @@
 
 Aplicación Flask para gestionar grupos, matrículas, asignaturas, notas por parciales, conducta y boletas académicas.
 
+![Estado: Delta / Prebeta](https://img.shields.io/badge/estado-Delta%20%2F%20Prebeta-orange)
+
+> **Estado actual: Delta / Prebeta (`v0.9.0-beta.1`).**
+> La aplicación es funcional y está en pruebas reales, pero todavía puede
+> contener errores y cambios importantes. Realiza un respaldo de `data/` antes
+> de actualizar o migrar la instalación.
+
 ## Licencia y autoría
 
 Este proyecto fue creado y es mantenido por **Cipriano** (`ciprianotoor`). Se
