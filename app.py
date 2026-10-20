@@ -306,6 +306,8 @@ def init_db():
         teacher_setting_columns = {row["name"] for row in connection.execute("PRAGMA table_info(teacher_settings)")}
         if "theme" not in teacher_setting_columns:
             connection.execute("ALTER TABLE teacher_settings ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'")
+        if "conduct_labels" not in teacher_setting_columns:
+            connection.execute("ALTER TABLE teacher_settings ADD COLUMN conduct_labels TEXT NOT NULL DEFAULT '{}'")
         # Add teacher_id columns if missing
         group_columns = {row["name"] for row in connection.execute("PRAGMA table_info(groups)")}
         if "teacher_id" not in group_columns:
@@ -664,6 +666,15 @@ def settings(teacher_id=None):
                 values["teacher_name"] = teacher["name"]
                 return values
         return fallback
+
+
+CONDUCT_LABEL_DEFAULTS = {"responsibility":"Responsabilidad", "discipline":"Disciplina", "respect":"Respeto", "punctuality":"Puntualidad", "participation":"Participación", "order":"Orden y aseo", "solidarity":"Solidaridad", "teamwork":"Trabajo en equipo", "tasks":"Cumplimiento de tareas"}
+
+def conduct_labels():
+    values = settings() or {}
+    try: saved = json.loads(values.get("conduct_labels") or "{}")
+    except (TypeError, ValueError): saved = {}
+    return {**CONDUCT_LABEL_DEFAULTS, **{k: v for k, v in saved.items() if k in CONDUCT_LABEL_DEFAULTS and v.strip()}}
 
 
 def partial_name(partial):
@@ -1228,7 +1239,7 @@ def onboarding_accounts_required(view):
 
 @app.context_processor
 def common():
-    return {"partial_name": partial_name, "app_settings": settings(), "applied_exam": applied_exam, "get_teacher_role": get_teacher_role, "teacher_is_admin": teacher_is_admin, "get_workflow_level": setup_level, "current_teacher": current_teacher_info()}
+    return {"partial_name": partial_name, "app_settings": settings(), "conduct_labels": conduct_labels(), "applied_exam": applied_exam, "get_teacher_role": get_teacher_role, "teacher_is_admin": teacher_is_admin, "get_workflow_level": setup_level, "current_teacher": current_teacher_info()}
 
 
 @app.get("/login")
@@ -1242,6 +1253,20 @@ def login():
 @teacher_required
 def help_view():
     return render_template("help.html")
+
+@app.route("/conduct-settings", methods=["GET", "POST"])
+@teacher_required
+def conduct_settings():
+    teacher_id = session.get("teacher_id")
+    if not (teacher_is_admin(teacher_id) or is_guide_teacher(teacher_id) or teacher_is_director(teacher_id)):
+        flash("No tienes permiso para editar las dimensiones de Conducta.", "error")
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        labels = {key: request.form.get(key, "").strip() or label for key, label in CONDUCT_LABEL_DEFAULTS.items()}
+        with db() as connection:
+            connection.execute("UPDATE teacher_settings SET conduct_labels=? WHERE teacher_id=?", (json.dumps(labels, ensure_ascii=False), teacher_id))
+        flash("Nombres de dimensiones actualizados.", "success")
+    return render_template("conduct_settings.html", labels=conduct_labels())
 
 
 @app.route("/attendance", methods=["GET", "POST"])
